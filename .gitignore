@@ -1,0 +1,55 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Python virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Test / coverage / type-check caches
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.pyre/
+.ruff_cache/
+.hypothesis/
+.tox/
+.nox/
+
+# Logs and local runtime files
+*.log
+*.pid
+*.seed
+*.sqlite3
+
+# FastAPI local uploads/temp (uncomment if used)
+# uploads/
+# tmp/
+
+# PyCharm
+.idea/
+/.idea/
+*.iml
+
+# OS files
+.DS_Store
+
+# uv
+.uv-cache/
+uv-cache/
+
+# Keep uv.lock tracked for reproducible builds.
+# Uncomment to ignore it:
+# uv.lock
+
