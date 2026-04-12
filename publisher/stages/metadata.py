@@ -82,14 +82,19 @@ class MetadataStage(PublisherStage):
         context.metadata.word_count = self._count_words(context)
 
         context.metadata.notes = [
-            "Metadata values are extracted from the skill file.",
+            "Metadata values are extracted from SKILL.md inside the skill folder.",
             "Token estimate is calculated automatically from the skill content.",
             "Word count is a publisher-side field and is not part of the server contract.",
         ]
         context.metadata.extra.update(
             {
-                "source_file": context.source.file_path,
+                "source_file": context.inventory.skill_markdown_path,
+                "skill_root": context.inventory.skill_root,
                 "source_file_name": context.source.file_name,
+                "companion_markdown_files": context.inventory.companion_markdown_files,
+                "script_files": context.inventory.script_files,
+                "reference_files": context.inventory.reference_files,
+                "asset_files": context.inventory.asset_files,
                 "compatibility": metadata_payload.get("compatibility"),
                 "license": metadata_payload.get("license"),
                 "declared_token_estimate": declared_token_estimate,
@@ -188,7 +193,21 @@ class MetadataStage(PublisherStage):
 
         if not text_source:
             text_source = context.source.raw_content or ""
+
+        companion_content = self._load_companion_markdown(context)
+        if companion_content:
+            text_source = text_source + "\n\n" + companion_content
         return text_source
+
+    def _load_companion_markdown(self, context: PublishContext) -> str:
+        """Load additional markdown files from the skill folder for metrics."""
+        skill_root = Path(context.inventory.skill_root or "")
+        contents: list[str] = []
+        for relative_path in context.inventory.companion_markdown_files:
+            candidate = skill_root / relative_path
+            if candidate.exists():
+                contents.append(candidate.read_text(encoding="utf-8"))
+        return "\n\n".join(contents)
 
     def _extract_string(self, payload: dict[str, Any], key: str) -> str | None:
         """Return a stripped string field if present."""

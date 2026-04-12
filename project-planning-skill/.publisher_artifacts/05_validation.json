@@ -1,7 +1,7 @@
 {
   "passed": true,
-  "skill_root": "project-planning-skill",
-  "skill_file": "project-planning-skill/SKILL.md",
+  "skill_root": "/Users/aviel/Documents/\u05dc\u05d9\u05de\u05d5\u05d3\u05d9\u05dd/\u05e4\u05e8\u05d5\u05d9\u05d9\u05e7\u05d8\u05d9\u05dd/aptitude/aptitude-publisher/project-planning-skill",
+  "skill_file": "/Users/aviel/Documents/\u05dc\u05d9\u05de\u05d5\u05d3\u05d9\u05dd/\u05e4\u05e8\u05d5\u05d9\u05d9\u05e7\u05d8\u05d9\u05dd/aptitude/aptitude-publisher/project-planning-skill/SKILL.md",
   "checks_run": [
     "skill_root_exists",
     "skill_folder_kebab_case",

@@ -6,6 +6,7 @@ from pathlib import Path
 
 from publisher.models import PublishContext, SkillSource
 from publisher.stages.delivery import DeliveryStage
+from publisher.stages.discovery import DiscoveryStage
 from publisher.stages.identity import IdentityStage
 from publisher.stages.metadata import MetadataStage
 from publisher.stages.ranking import RankingStage
@@ -18,6 +19,7 @@ class PublisherPipeline:
 
     def __init__(self) -> None:
         self._stages = (
+            DiscoveryStage(),
             IdentityStage(),
             MetadataStage(),
             SecurityStage(),

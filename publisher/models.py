@@ -17,6 +17,24 @@ class SkillSource:
 
 
 @dataclass(slots=True)
+class SkillInventory:
+    """Discovered file inventory for one skill folder."""
+
+    skill_root: str | None = None
+    skill_markdown_path: str | None = None
+    scripts_dir: str | None = None
+    references_dir: str | None = None
+    assets_dir: str | None = None
+    companion_markdown_files: list[str] = field(default_factory=list)
+    script_files: list[str] = field(default_factory=list)
+    reference_files: list[str] = field(default_factory=list)
+    asset_files: list[str] = field(default_factory=list)
+    other_files: list[str] = field(default_factory=list)
+    artifact_path: str | None = None
+    notes: list[str] = field(default_factory=list)
+
+
+@dataclass(slots=True)
 class IdentityInfo:
     """Phase 1 output: slug, version, and intent."""
 
@@ -115,6 +133,7 @@ class PublishContext:
 
     source: SkillSource
     artifacts_dir: str | None = None
+    inventory: SkillInventory = field(default_factory=SkillInventory)
     identity: IdentityInfo = field(default_factory=IdentityInfo)
     metadata: MetadataInfo = field(default_factory=MetadataInfo)
     ranking: RankingInfo = field(default_factory=RankingInfo)
