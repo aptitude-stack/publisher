@@ -1,0 +1,41 @@
+{
+  "passed": false,
+  "skill_root": "example-claude-skill",
+  "skill_file": "example-claude-skill/SKILL.md",
+  "checks_run": [
+    "skill_root_exists",
+    "skill_folder_kebab_case",
+    "skill_md_present",
+    "readme_absent_in_skill_folder",
+    "yaml_frontmatter_present",
+    "frontmatter_name_present",
+    "frontmatter_name_kebab_case",
+    "frontmatter_name_matches_folder",
+    "frontmatter_name_reserved_words",
+    "frontmatter_description_present",
+    "frontmatter_description_length",
+    "frontmatter_description_trigger_guidance",
+    "frontmatter_no_xml_angle_brackets",
+    "compatibility_length_if_present",
+    "body_present",
+    "body_instructions_heading",
+    "body_examples_presence",
+    "body_troubleshooting_presence",
+    "identity_stage_completed",
+    "metadata_stage_completed",
+    "security_stage_completed"
+  ],
+  "frontmatter_keys": [
+    "compatibility",
+    "description",
+    "metadata",
+    "name"
+  ],
+  "errors": [
+    "Frontmatter name should match the skill folder name."
+  ],
+  "warnings": [],
+  "notes": [
+    "Validation enforces Anthropic SKILL.md structure and publisher readiness."
+  ]
+}

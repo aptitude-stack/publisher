@@ -1,0 +1,36 @@
+{
+  "scan_targets": [
+    "content.raw_markdown",
+    "content.rendered_summary",
+    "metadata.description",
+    "metadata.tags",
+    "metadata.headers",
+    "metadata.inputs_schema",
+    "metadata.outputs_schema"
+  ],
+  "checks_run": [
+    "direct_injection_patterns",
+    "indirect_injection_patterns",
+    "sensitive_data_exfiltration_requests",
+    "policy_bypass_attempts",
+    "dangerous_action_requests",
+    "hidden_or_obfuscated_instructions",
+    "role_or_authority_manipulation",
+    "skill_purpose_content_mismatch",
+    "manipulative_language_density",
+    "combined_risk_signal_detection"
+  ],
+  "score": 1.0,
+  "severity_counts": {
+    "low": 0,
+    "medium": 0,
+    "high": 0,
+    "critical": 0
+  },
+  "decision": "allow",
+  "findings": [],
+  "notes": [
+    "This stage is focused on prompt-injection and unsafe instruction detection.",
+    "The current implementation uses deterministic heuristics and does not require an LLM token."
+  ]
+}

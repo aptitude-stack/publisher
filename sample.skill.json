@@ -1,0 +1,25 @@
+{
+  "slug": "python.lint",
+  "version": "1.0.0",
+  "intent": "create_skill",
+  "content": {
+    "raw_markdown": "# Python Lint\n\nLint Python files consistently.\n"
+  },
+  "metadata": {
+    "name": "Python Lint",
+    "description": "Lint Python files.",
+    "tags": ["python", "lint", "python"],
+    "headers": {
+      "runtime": "python"
+    },
+    "inputs_schema": {
+      "type": "object"
+    },
+    "outputs_schema": {
+      "type": "object"
+    },
+    "token_estimate": 128,
+    "maturity_score": 0.9,
+    "security_score": 0.95
+  }
+}

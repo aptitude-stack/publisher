@@ -1,0 +1,17 @@
+{
+  "slug": "python.partial",
+  "version": "1.0.0",
+  "intent": "create_skill",
+  "source_file": "incomplete_metadata.skill.json",
+  "parsed_keys": [
+    "content",
+    "intent",
+    "metadata",
+    "slug",
+    "version"
+  ],
+  "notes": [
+    "Identity values are extracted from the skill file.",
+    "All required identity fields were provided."
+  ]
+}

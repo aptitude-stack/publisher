@@ -1,0 +1,17 @@
+{
+  "slug": "project-planning-skill",
+  "version": "1.0.0",
+  "intent": "create_skill",
+  "source_file": "project-planning-skill",
+  "parsed_keys": [
+    "body",
+    "content",
+    "frontmatter",
+    "skill_file",
+    "skill_root"
+  ],
+  "notes": [
+    "Identity values are extracted from the skill file.",
+    "All required identity fields were provided."
+  ]
+}

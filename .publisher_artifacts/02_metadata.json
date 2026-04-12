@@ -1,0 +1,17 @@
+{
+  "name": "Partial Skill",
+  "description": null,
+  "tags": [],
+  "headers": {},
+  "inputs_schema": null,
+  "outputs_schema": null,
+  "token_estimate": null,
+  "word_count": 8,
+  "maturity_score": null,
+  "security_score": null,
+  "notes": [
+    "Metadata values are extracted from the skill file.",
+    "Word count is a publisher-side field and is not part of the server contract.",
+    "Missing required metadata fields: metadata.description, metadata.tags, metadata.headers, metadata.inputs_schema, metadata.outputs_schema"
+  ]
+}

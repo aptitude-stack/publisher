@@ -1,0 +1,27 @@
+{
+  "name": "project-planning-skill",
+  "description": "Manages project planning workflows and creates structured planning output. Use when user asks for sprint planning, project planning, or roadmap setup.",
+  "tags": [
+    "planning",
+    "projects"
+  ],
+  "headers": {
+    "runtime": "markdown"
+  },
+  "inputs_schema": {
+    "type": "object"
+  },
+  "outputs_schema": {
+    "type": "object"
+  },
+  "token_estimate": 134,
+  "word_count": 71,
+  "maturity_score": 0.9,
+  "security_score": 0.95,
+  "notes": [
+    "Metadata values are extracted from the skill file.",
+    "Token estimate is calculated automatically from the skill content.",
+    "Word count is a publisher-side field and is not part of the server contract.",
+    "All required metadata fields were provided."
+  ]
+}

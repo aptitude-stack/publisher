@@ -1,0 +1,11 @@
+{
+  "slug": "python.partial",
+  "version": "1.0.0",
+  "intent": "create_skill",
+  "content": {
+    "raw_markdown": "# Partial Skill\n\nThis skill is missing metadata fields.\n"
+  },
+  "metadata": {
+    "name": "Partial Skill"
+  }
+}
