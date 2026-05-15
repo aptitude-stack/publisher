@@ -20,15 +20,24 @@
     "promptmap_rulepack",
     "combined_risk_signal_detection"
   ],
-  "score": 1.0,
+  "score": 0.7,
   "severity_counts": {
     "low": 0,
     "medium": 0,
-    "high": 0,
+    "high": 1,
     "critical": 0
   },
-  "decision": "allow",
-  "findings": [],
+  "decision": "review_required",
+  "findings": [
+    {
+      "check": "policy_bypass_attempts",
+      "severity": "high",
+      "status": "matched",
+      "field": "content.raw_markdown",
+      "reason": "Matched policy bypass phrasing: authorized override",
+      "evidence": "authorized override"
+    }
+  ],
   "notes": [
     "This stage is focused on prompt-injection and unsafe instruction detection.",
     "The current implementation uses deterministic heuristics and does not require an LLM token.",

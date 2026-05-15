@@ -1,0 +1,30 @@
+{
+  "total_score": 0.66,
+  "criteria_scores": {
+    "security": 0.7,
+    "performance_exam": 0.28,
+    "token_efficiency": 0.8,
+    "metadata_completeness": 1.0,
+    "instruction_quality": 0.33,
+    "anthropic_compliance": 0.8
+  },
+  "weights": {
+    "security": 0.3,
+    "performance_exam": 0.25,
+    "token_efficiency": 0.15,
+    "anthropic_compliance": 0.2,
+    "metadata_completeness": 0.1,
+    "instruction_quality": 0.0
+  },
+  "label": "review",
+  "publish_decision": "review_required",
+  "explanation": [
+    "Security score contributes 0.70 based on prompt-injection findings.",
+    "Performance exam score contributes 0.28 based on skill lift 0.06 and token delta -142.",
+    "Token efficiency score is 0.80 from performance exam tokens 792->650.",
+    "Metadata completeness score is 1.00 based on required metadata coverage.",
+    "Instruction quality score is 0.33 based on instructions/examples/troubleshooting sections.",
+    "Anthropic compliance score is 0.80 based on validation errors/warnings.",
+    "Final weighted score is 0.66, labeled review, with publish decision review_required."
+  ]
+}

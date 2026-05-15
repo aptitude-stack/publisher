@@ -1,0 +1,21 @@
+{
+  "skill_root": "/Users/aviel/Documents/\u05dc\u05d9\u05de\u05d5\u05d3\u05d9\u05dd/\u05e4\u05e8\u05d5\u05d9\u05d9\u05e7\u05d8\u05d9\u05dd/aptitude/aptitude-publisher/project-planning-skill",
+  "skill_markdown_path": "/Users/aviel/Documents/\u05dc\u05d9\u05de\u05d5\u05d3\u05d9\u05dd/\u05e4\u05e8\u05d5\u05d9\u05d9\u05e7\u05d8\u05d9\u05dd/aptitude/aptitude-publisher/project-planning-skill/SKILL.md",
+  "scripts_dir": null,
+  "references_dir": null,
+  "assets_dir": null,
+  "repo_root": "/Users/aviel/Documents/\u05dc\u05d9\u05de\u05d5\u05d3\u05d9\u05dd/\u05e4\u05e8\u05d5\u05d9\u05d9\u05e7\u05d8\u05d9\u05dd/aptitude/aptitude-publisher",
+  "repo_url": "https://github.com/aptitude-stack/publisher",
+  "commit_sha": "24df91c7637d8044398c3e6f1788ff8a279593da",
+  "tree_path": "project-planning-skill",
+  "companion_markdown_files": [],
+  "script_files": [],
+  "reference_files": [],
+  "asset_files": [],
+  "other_files": [],
+  "notes": [
+    "Skill inventory is built from the full folder, not from a single file.",
+    "SKILL.md is treated as the primary entry file for the package.",
+    "Repository URL was discovered from the local git repository."
+  ]
+}

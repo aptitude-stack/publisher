@@ -7,7 +7,6 @@ metadata:
   version: 1.0.0
   intent: create_skill
   tags: [planning, projects]
-  headers: {"runtime": "markdown"}
   inputs_schema: {"type": "object"}
   outputs_schema: {"type": "object"}
   token_estimate: 128

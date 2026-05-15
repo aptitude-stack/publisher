@@ -1,9 +1,9 @@
 {
-  "name": "project-planning-skill",
-  "description": "Manages project planning workflows and creates structured planning output. Use when user asks for sprint planning, project planning, or roadmap setup.",
+  "name": "blocked-security-skill",
+  "description": "Demonstrates a blocked skill with malicious prompt-injection content. Use when showing how publisher security stops unsafe skills.",
   "tags": [
-    "planning",
-    "projects"
+    "security",
+    "demo"
   ],
   "inputs_schema": {
     "type": "object"
@@ -11,10 +11,10 @@
   "outputs_schema": {
     "type": "object"
   },
-  "token_estimate": 134,
-  "word_count": 71,
-  "maturity_score": 0.9,
-  "security_score": 0.95,
+  "token_estimate": 72,
+  "word_count": 40,
+  "maturity_score": 0.2,
+  "security_score": 0.0,
   "repo_url": "https://github.com/aptitude-stack/publisher",
   "repo_signals": {
     "available": false,

@@ -14,6 +14,14 @@ class SkillSource:
     raw_content: str | None = None
     file_name: str | None = None
     parsed_content: dict[str, Any] = field(default_factory=dict)
+    slug_override: str | None = None
+    version_override: str | None = None
+    intent_override: str | None = None
+    trust_tier: str = "untrusted"
+    namespace: str = "public"
+    artifact_origin: str = "internal"
+    policy_pack_slug: str | None = None
+    publisher_identity: str | None = None
 
 
 @dataclass(slots=True)
@@ -25,6 +33,10 @@ class SkillInventory:
     scripts_dir: str | None = None
     references_dir: str | None = None
     assets_dir: str | None = None
+    repo_root: str | None = None
+    repo_url: str | None = None
+    commit_sha: str | None = None
+    tree_path: str | None = None
     companion_markdown_files: list[str] = field(default_factory=list)
     script_files: list[str] = field(default_factory=list)
     reference_files: list[str] = field(default_factory=list)
@@ -52,7 +64,6 @@ class MetadataInfo:
     name: str | None = None
     description: str | None = None
     tags: list[str] = field(default_factory=list)
-    headers: dict[str, Any] = field(default_factory=dict)
     inputs_schema: dict[str, Any] | None = None
     outputs_schema: dict[str, Any] | None = None
     token_estimate: int | None = None
@@ -105,6 +116,25 @@ class ValidationInfo:
 
 
 @dataclass(slots=True)
+class PerformanceExamInfo:
+    """Phase 6 output: measured skill-performance evidence."""
+
+    score: float | None = None
+    passed: bool = False
+    test_case_count: int = 0
+    models_tested: list[str] = field(default_factory=list)
+    baseline_success_rate: float | None = None
+    skilled_success_rate: float | None = None
+    skill_lift: float | None = None
+    baseline_avg_tokens: int | None = None
+    skilled_avg_tokens: int | None = None
+    token_delta: int | None = None
+    efficiency_label: str | None = None
+    artifact_path: str | None = None
+    notes: list[str] = field(default_factory=list)
+
+
+@dataclass(slots=True)
 class DeliveryPayload:
     """Phase 6 output: final payload for the client endpoint."""
 
@@ -118,6 +148,20 @@ class DeliveryPayload:
 
 
 @dataclass(slots=True)
+class CompressionInfo:
+    """Phase 7 output: compressed delivery package details."""
+
+    algorithm: str | None = None
+    compressed_artifact_path: str | None = None
+    manifest_artifact_path: str | None = None
+    available: bool = False
+    uncompressed_size: int | None = None
+    compressed_size: int | None = None
+    compression_ratio: float | None = None
+    notes: list[str] = field(default_factory=list)
+
+
+@dataclass(slots=True)
 class StageSnapshot:
     """Stores per-stage results for traceability."""
 
@@ -125,6 +169,17 @@ class StageSnapshot:
     status: str = "pending"
     data: dict[str, Any] = field(default_factory=dict)
     messages: list[str] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class GateResult:
+    """Stores the result of a gate that verifies stage readiness."""
+
+    gate_name: str
+    passed: bool
+    blocking_issues: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+    data: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -139,8 +194,11 @@ class PublishContext:
     ranking: RankingInfo = field(default_factory=RankingInfo)
     security: SecurityInfo = field(default_factory=SecurityInfo)
     validation: ValidationInfo = field(default_factory=ValidationInfo)
+    performance_exam: PerformanceExamInfo = field(default_factory=PerformanceExamInfo)
     delivery_payload: DeliveryPayload = field(default_factory=DeliveryPayload)
+    compression: CompressionInfo = field(default_factory=CompressionInfo)
     stage_history: list[StageSnapshot] = field(default_factory=list)
+    gate_history: list[GateResult] = field(default_factory=list)
 
     def add_snapshot(
         self,
@@ -157,5 +215,25 @@ class PublishContext:
                 status=status,
                 data=data or {},
                 messages=messages or [],
+            )
+        )
+
+    def add_gate_result(
+        self,
+        *,
+        gate_name: str,
+        passed: bool,
+        blocking_issues: list[str] | None = None,
+        warnings: list[str] | None = None,
+        data: dict[str, Any] | None = None,
+    ) -> None:
+        """Record the outcome of one gate evaluation."""
+        self.gate_history.append(
+            GateResult(
+                gate_name=gate_name,
+                passed=passed,
+                blocking_issues=blocking_issues or [],
+                warnings=warnings or [],
+                data=data or {},
             )
         )

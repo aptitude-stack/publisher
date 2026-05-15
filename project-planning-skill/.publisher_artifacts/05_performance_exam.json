@@ -1,0 +1,19 @@
+{
+  "score": 0.84,
+  "passed": true,
+  "test_case_count": 3,
+  "models_tested": [
+    "publisher-sonnet-baseline"
+  ],
+  "baseline_success_rate": 0.58,
+  "skilled_success_rate": 0.84,
+  "skill_lift": 0.26,
+  "baseline_avg_tokens": 134,
+  "skilled_avg_tokens": 94,
+  "token_delta": -40,
+  "efficiency_label": "improved",
+  "notes": [
+    "Performance exam is a deterministic placeholder until live benchmark execution is wired in.",
+    "The field is intended to hold upskill-style evidence such as success lift and token deltas."
+  ]
+}
