@@ -1,0 +1,43 @@
+{
+  "name": "low-evaluation-skill",
+  "description": "Handles generic note drafting and repetitive status summaries. Use when user asks for a very basic draft and does not need strong structure or specialized reasoning.",
+  "tags": [
+    "drafting",
+    "notes"
+  ],
+  "inputs_schema": {
+    "type": "object"
+  },
+  "outputs_schema": {
+    "type": "object"
+  },
+  "token_estimate": 792,
+  "word_count": 476,
+  "maturity_score": 0.2,
+  "security_score": 0.3,
+  "repo_url": "https://github.com/aptitude-stack/publisher",
+  "repo_signals": {
+    "available": true,
+    "provider": "github",
+    "repo_url": "https://github.com/aptitude-stack/publisher",
+    "owner": "aptitude-stack",
+    "owner_type": "Organization",
+    "repo": "publisher",
+    "stars": 0,
+    "forks": 0,
+    "watchers": 0,
+    "open_issues": 0,
+    "default_branch": "master",
+    "created_at": "2026-04-01T10:17:58Z",
+    "updated_at": "2026-05-15T10:10:49Z",
+    "pushed_at": "2026-05-15T10:23:12Z",
+    "contributors_count": null,
+    "description": null,
+    "license": "MIT"
+  },
+  "notes": [
+    "Metadata values are extracted from SKILL.md inside the skill folder.",
+    "Token estimate is calculated automatically from the skill content.",
+    "Word count is a publisher-side field and is not part of the server contract."
+  ]
+}

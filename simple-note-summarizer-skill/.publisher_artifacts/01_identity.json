@@ -1,0 +1,20 @@
+{
+  "slug": "local.note-summarizer",
+  "version": "0.1.0",
+  "intent": "create_skill",
+  "source_file": "/Users/aviel/Documents/\u05dc\u05d9\u05de\u05d5\u05d3\u05d9\u05dd/\u05e4\u05e8\u05d5\u05d9\u05d9\u05e7\u05d8\u05d9\u05dd/aptitude/aptitude-publisher/simple-note-summarizer-skill/SKILL.md",
+  "skill_root": "/Users/aviel/Documents/\u05dc\u05d9\u05de\u05d5\u05d3\u05d9\u05dd/\u05e4\u05e8\u05d5\u05d9\u05d9\u05e7\u05d8\u05d9\u05dd/aptitude/aptitude-publisher/simple-note-summarizer-skill",
+  "inventory_artifact": "/Users/aviel/Documents/\u05dc\u05d9\u05de\u05d5\u05d3\u05d9\u05dd/\u05e4\u05e8\u05d5\u05d9\u05d9\u05e7\u05d8\u05d9\u05dd/aptitude/aptitude-publisher/simple-note-summarizer-skill/.publisher_artifacts/00_inventory.json",
+  "parsed_keys": [
+    "body",
+    "content",
+    "frontmatter",
+    "inventory",
+    "skill_file",
+    "skill_root"
+  ],
+  "notes": [
+    "Identity values are extracted from the skill file.",
+    "All required identity fields were provided."
+  ]
+}

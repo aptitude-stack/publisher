@@ -1,0 +1,78 @@
+{
+  "scan_targets": [
+    "content.raw_markdown",
+    "content.rendered_summary",
+    "metadata.description",
+    "metadata.tags",
+    "metadata.inputs_schema",
+    "metadata.outputs_schema"
+  ],
+  "checks_run": [
+    "direct_injection_patterns",
+    "indirect_injection_patterns",
+    "sensitive_data_exfiltration_requests",
+    "policy_bypass_attempts",
+    "dangerous_action_requests",
+    "hidden_or_obfuscated_instructions",
+    "role_or_authority_manipulation",
+    "skill_purpose_content_mismatch",
+    "manipulative_language_density",
+    "promptmap_rulepack",
+    "combined_risk_signal_detection"
+  ],
+  "score": 0.0,
+  "severity_counts": {
+    "low": 0,
+    "medium": 0,
+    "high": 1,
+    "critical": 4
+  },
+  "decision": "block",
+  "findings": [
+    {
+      "check": "direct_injection_patterns",
+      "severity": "high",
+      "status": "matched",
+      "field": "content.raw_markdown",
+      "reason": "Matched direct instruction-override pattern: ignore previous instructions",
+      "evidence": "ignore previous instructions"
+    },
+    {
+      "check": "sensitive_data_exfiltration_requests",
+      "severity": "critical",
+      "status": "matched",
+      "field": "content.raw_markdown",
+      "reason": "Matched sensitive data exfiltration request: reveal the system prompt",
+      "evidence": "reveal the system prompt"
+    },
+    {
+      "check": "sensitive_data_exfiltration_requests",
+      "severity": "critical",
+      "status": "matched",
+      "field": "content.raw_markdown",
+      "reason": "Matched sensitive data exfiltration request: print secrets",
+      "evidence": "print secrets"
+    },
+    {
+      "check": "dangerous_action_requests",
+      "severity": "critical",
+      "status": "matched",
+      "field": "content.raw_markdown",
+      "reason": "Matched dangerous action request: delete all files",
+      "evidence": "delete all files"
+    },
+    {
+      "check": "combined_risk_signal_detection",
+      "severity": "critical",
+      "status": "matched",
+      "field": "multiple_fields",
+      "reason": "Detected multiple high-risk injection signals across the skill.",
+      "evidence": "dangerous_action_requests, direct_injection_patterns, sensitive_data_exfiltration_requests"
+    }
+  ],
+  "notes": [
+    "This stage is focused on prompt-injection and unsafe instruction detection.",
+    "The current implementation uses deterministic heuristics and does not require an LLM token.",
+    "Promptmap-inspired rule coverage is included as part of the local security scan."
+  ]
+}

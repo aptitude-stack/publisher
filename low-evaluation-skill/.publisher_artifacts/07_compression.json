@@ -1,0 +1,11 @@
+{
+  "algorithm": "zstd",
+  "available": true,
+  "compressed_artifact_path": "/Users/aviel/Documents/\u05dc\u05d9\u05de\u05d5\u05d3\u05d9\u05dd/\u05e4\u05e8\u05d5\u05d9\u05d9\u05e7\u05d8\u05d9\u05dd/aptitude/aptitude-publisher/low-evaluation-skill/.publisher_artifacts/07_delivery_package.zst",
+  "uncompressed_size": 1316,
+  "compressed_size": 655,
+  "compression_ratio": 0.498,
+  "notes": [
+    "Compression is implemented with the Python 3.12-compatible 'zstandard' package."
+  ]
+}
