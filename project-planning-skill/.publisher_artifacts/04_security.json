@@ -4,7 +4,6 @@
     "content.rendered_summary",
     "metadata.description",
     "metadata.tags",
-    "metadata.headers",
     "metadata.inputs_schema",
     "metadata.outputs_schema"
   ],
@@ -18,6 +17,7 @@
     "role_or_authority_manipulation",
     "skill_purpose_content_mismatch",
     "manipulative_language_density",
+    "promptmap_rulepack",
     "combined_risk_signal_detection"
   ],
   "score": 1.0,
@@ -31,6 +31,7 @@
   "findings": [],
   "notes": [
     "This stage is focused on prompt-injection and unsafe instruction detection.",
-    "The current implementation uses deterministic heuristics and does not require an LLM token."
+    "The current implementation uses deterministic heuristics and does not require an LLM token.",
+    "Promptmap-inspired rule coverage is included as part of the local security scan."
   ]
 }

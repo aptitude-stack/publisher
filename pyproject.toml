@@ -2,4 +2,11 @@
 name = "publisher"
 version = "0.1.0"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "prompt-toolkit>=3.0",
+    "rich>=13.0",
+    "zstandard>=0.23,<0.24",
+]
+
+[project.scripts]
+aptitude-publisher = "publisher.cli:main"

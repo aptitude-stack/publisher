@@ -45,9 +45,15 @@ class IdentityStage(PublisherStage):
         """Extract slug, version, and intent from the parsed skill file."""
         frontmatter = parsed_skill.get("frontmatter", {})
         metadata = frontmatter.get("metadata", {}) if isinstance(frontmatter, dict) else {}
-        context.identity.slug = self._extract_string(frontmatter, "name")
-        context.identity.version = self._extract_string(metadata, "version")
-        context.identity.intent = self._extract_string(metadata, "intent")
+        context.identity.slug = (
+            context.source.slug_override or self._extract_string(frontmatter, "name")
+        )
+        context.identity.version = (
+            context.source.version_override or self._extract_string(metadata, "version")
+        )
+        context.identity.intent = (
+            context.source.intent_override or self._extract_string(metadata, "intent")
+        )
 
     def _collect_missing_fields(self, context: PublishContext) -> list[str]:
         """Find missing required identity fields."""

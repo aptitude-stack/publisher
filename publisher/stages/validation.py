@@ -290,8 +290,6 @@ class ValidationStage(PublisherStage):
             required_metadata_missing.append("description")
         if not context.metadata.tags:
             required_metadata_missing.append("tags")
-        if not context.metadata.headers:
-            required_metadata_missing.append("headers")
         if context.metadata.inputs_schema is None:
             required_metadata_missing.append("inputs_schema")
         if context.metadata.outputs_schema is None:

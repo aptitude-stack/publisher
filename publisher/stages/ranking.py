@@ -17,6 +17,7 @@ class RankingStage(PublisherStage):
     def run(self, context: PublishContext) -> None:
         self._populate_weights(context)
         self._score_security(context)
+        self._score_performance_exam(context)
         self._score_token_efficiency(context)
         self._score_metadata_completeness(context)
         self._score_instruction_quality(context)
@@ -42,11 +43,12 @@ class RankingStage(PublisherStage):
     def _populate_weights(self, context: PublishContext) -> None:
         """Define the rubric weights for the overall score."""
         context.ranking.weights = {
-            "security": 0.40,
-            "token_efficiency": 0.25,
+            "security": 0.30,
+            "performance_exam": 0.25,
+            "token_efficiency": 0.15,
             "anthropic_compliance": 0.20,
             "metadata_completeness": 0.10,
-            "instruction_quality": 0.05,
+            "instruction_quality": 0.00,
         }
         context.ranking.criteria_scores = {}
         context.ranking.explanation = []
@@ -59,25 +61,49 @@ class RankingStage(PublisherStage):
             f"Security score contributes {score:.2f} based on prompt-injection findings."
         )
 
+    def _score_performance_exam(self, context: PublishContext) -> None:
+        """Use measured performance evidence when available."""
+        score = context.performance_exam.score if context.performance_exam.score is not None else 0.0
+        context.ranking.criteria_scores["performance_exam"] = round(score, 2)
+        context.ranking.explanation.append(
+            "Performance exam score contributes "
+            f"{score:.2f} based on skill lift {context.performance_exam.skill_lift} "
+            f"and token delta {context.performance_exam.token_delta}."
+        )
+
     def _score_token_efficiency(self, context: PublishContext) -> None:
         """Score lower token usage higher."""
+        exam = context.performance_exam
         token_estimate = context.metadata.token_estimate
-        if token_estimate is None:
-            score = 0.4
-        elif token_estimate <= 200:
-            score = 1.0
-        elif token_estimate <= 500:
-            score = 0.8
-        elif token_estimate <= 1000:
-            score = 0.6
-        elif token_estimate <= 2000:
-            score = 0.4
+        if exam.baseline_avg_tokens and exam.skilled_avg_tokens:
+            if exam.skilled_avg_tokens <= exam.baseline_avg_tokens * 0.70:
+                score = 1.0
+            elif exam.skilled_avg_tokens <= exam.baseline_avg_tokens * 0.85:
+                score = 0.8
+            elif exam.skilled_avg_tokens <= exam.baseline_avg_tokens:
+                score = 0.65
+            else:
+                score = 0.3
+            explanation = (
+                f"Token efficiency score is {score:.2f} from performance exam tokens "
+                f"{exam.baseline_avg_tokens}->{exam.skilled_avg_tokens}."
+            )
         else:
-            score = 0.2
+            if token_estimate is None:
+                score = 0.4
+            elif token_estimate <= 200:
+                score = 1.0
+            elif token_estimate <= 500:
+                score = 0.8
+            elif token_estimate <= 1000:
+                score = 0.6
+            elif token_estimate <= 2000:
+                score = 0.4
+            else:
+                score = 0.2
+            explanation = f"Token efficiency score is {score:.2f} for token estimate {token_estimate}."
         context.ranking.criteria_scores["token_efficiency"] = score
-        context.ranking.explanation.append(
-            f"Token efficiency score is {score:.2f} for token estimate {token_estimate}."
-        )
+        context.ranking.explanation.append(explanation)
 
     def _score_metadata_completeness(self, context: PublishContext) -> None:
         """Score based on how many required metadata fields are present."""
@@ -85,7 +111,6 @@ class RankingStage(PublisherStage):
             bool(context.metadata.name),
             bool(context.metadata.description),
             bool(context.metadata.tags),
-            bool(context.metadata.headers),
             context.metadata.inputs_schema is not None,
             context.metadata.outputs_schema is not None,
         ]
@@ -135,7 +160,7 @@ class RankingStage(PublisherStage):
             label = "excellent"
         elif total >= 0.70:
             label = "good"
-        elif total >= 0.50:
+        elif total >= 0.55:
             label = "review"
         else:
             label = "poor"

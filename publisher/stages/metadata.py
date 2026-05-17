@@ -7,6 +7,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from publisher.integrations.github_api import fetch_repository_signals
 from publisher.models import PublishContext
 from publisher.stages.base import PublisherStage
 
@@ -19,18 +20,16 @@ class MetadataStage(PublisherStage):
     def run(self, context: PublishContext) -> None:
         metadata_payload = self._load_metadata_payload(context)
         self._populate_metadata(context, metadata_payload)
-        missing_fields = self._collect_missing_fields(context)
         artifact_path = self._write_metadata_artifact(context)
         context.add_snapshot(
             stage_name=self.name,
-            status="completed" if not missing_fields else "incomplete",
+            status="completed",
             data={
                 "name": context.metadata.name,
                 "description": context.metadata.description,
                 "tags": context.metadata.tags,
                 "word_count": context.metadata.word_count,
                 "artifact_path": artifact_path,
-                "missing_fields": missing_fields,
             },
             messages=[
                 "Metadata values were extracted from the skill file.",
@@ -52,7 +51,6 @@ class MetadataStage(PublisherStage):
             "name": frontmatter.get("name"),
             "description": frontmatter.get("description"),
             "tags": extra_metadata.get("tags", []),
-            "headers": extra_metadata.get("headers"),
             "inputs_schema": extra_metadata.get("inputs_schema"),
             "outputs_schema": extra_metadata.get("outputs_schema"),
             "token_estimate": extra_metadata.get("token_estimate"),
@@ -73,7 +71,6 @@ class MetadataStage(PublisherStage):
         context.metadata.name = self._extract_string(metadata_payload, "name")
         context.metadata.description = self._extract_string(metadata_payload, "description")
         context.metadata.tags = self._extract_string_list(metadata_payload, "tags")
-        context.metadata.headers = self._extract_dict(metadata_payload, "headers") or {}
         context.metadata.inputs_schema = self._extract_dict(metadata_payload, "inputs_schema")
         context.metadata.outputs_schema = self._extract_dict(metadata_payload, "outputs_schema")
         context.metadata.token_estimate = self._estimate_tokens(context)
@@ -90,6 +87,8 @@ class MetadataStage(PublisherStage):
             {
                 "source_file": context.inventory.skill_markdown_path,
                 "skill_root": context.inventory.skill_root,
+                "repo_root": context.inventory.repo_root,
+                "repo_url": context.inventory.repo_url,
                 "source_file_name": context.source.file_name,
                 "companion_markdown_files": context.inventory.companion_markdown_files,
                 "script_files": context.inventory.script_files,
@@ -102,7 +101,6 @@ class MetadataStage(PublisherStage):
                     "name",
                     "description",
                     "tags",
-                    "headers",
                     "inputs_schema",
                     "outputs_schema",
                     "token_estimate",
@@ -111,29 +109,9 @@ class MetadataStage(PublisherStage):
                 ],
             }
         )
-
-    def _collect_missing_fields(self, context: PublishContext) -> list[str]:
-        """Find required metadata fields that are still missing."""
-        missing_fields: list[str] = []
-        if not context.metadata.name:
-            missing_fields.append("metadata.name")
-        if not context.metadata.description:
-            missing_fields.append("metadata.description")
-        if not context.metadata.tags:
-            missing_fields.append("metadata.tags")
-        if not context.metadata.headers:
-            missing_fields.append("metadata.headers")
-        if context.metadata.inputs_schema is None:
-            missing_fields.append("metadata.inputs_schema")
-        if context.metadata.outputs_schema is None:
-            missing_fields.append("metadata.outputs_schema")
-        if missing_fields:
-            context.metadata.notes.append(
-                "Missing required metadata fields: " + ", ".join(missing_fields)
-            )
-        else:
-            context.metadata.notes.append("All required metadata fields were provided.")
-        return missing_fields
+        context.metadata.extra["repo_signals"] = fetch_repository_signals(
+            context.inventory.repo_url
+        )
 
     def _write_metadata_artifact(self, context: PublishContext) -> str:
         """Persist the stage 2 result as a JSON artifact."""
@@ -145,13 +123,14 @@ class MetadataStage(PublisherStage):
             "name": context.metadata.name,
             "description": context.metadata.description,
             "tags": context.metadata.tags,
-            "headers": context.metadata.headers,
             "inputs_schema": context.metadata.inputs_schema,
             "outputs_schema": context.metadata.outputs_schema,
             "token_estimate": context.metadata.token_estimate,
             "word_count": context.metadata.word_count,
             "maturity_score": context.metadata.maturity_score,
             "security_score": context.metadata.security_score,
+            "repo_url": context.metadata.extra.get("repo_url"),
+            "repo_signals": context.metadata.extra.get("repo_signals"),
             "notes": context.metadata.notes,
         }
         artifact_path.write_text(
