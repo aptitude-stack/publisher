@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/aptitude-publisher.iml" filepath="$PROJECT_DIR$/.idea/aptitude-publisher.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/publisher.iml" filepath="$PROJECT_DIR$/.idea/publisher.iml" />
     </modules>
   </component>
 </project>
