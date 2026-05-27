@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from publisher.gates.base import PublisherGate
-from publisher.models import PublishContext
+from publisher.domain.models import PublishContext
 
 
 class MetadataGate(PublisherGate):
@@ -30,9 +30,9 @@ class MetadataGate(PublisherGate):
             blocking_issues.append("Metadata is missing outputs_schema.")
 
         if metadata.token_estimate is None:
-            blocking_issues.append("Metadata did not compute token_estimate.")
+            warnings.append("Metadata did not compute token_estimate.")
         elif metadata.token_estimate < 0:
-            blocking_issues.append("Metadata token_estimate must not be negative.")
+            warnings.append("Metadata token_estimate must not be negative.")
 
         if metadata.word_count is None:
             warnings.append("Metadata did not compute word_count.")

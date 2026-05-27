@@ -7,7 +7,7 @@ import json
 import uuid
 from urllib import error, request
 
-from publisher.models import PublishContext
+from publisher.domain.models import PublishContext
 
 
 @dataclass(frozen=True, slots=True)

@@ -1,4 +1,4 @@
-"""Phase 4: security scan and security score placeholder."""
+"""Phase 4: security scan using NVIDIA garak as the authoritative source."""
 
 from __future__ import annotations
 
@@ -7,24 +7,50 @@ from pathlib import Path
 import re
 from typing import Any
 
-from publisher.models import PublishContext
+from publisher.integrations.garak_security import run_garak_security_scan
+from publisher.domain.models import PublishContext
 from publisher.stages.base import PublisherStage
 
 
 class SecurityStage(PublisherStage):
-    """Prepare the security review step around prompt-injection related checks."""
+    """Prepare the security review step around NVIDIA garak results."""
 
     name = "security"
 
     def run(self, context: PublishContext) -> None:
         self._populate_security_template(context)
-        field_values = self._collect_field_values(context)
-        findings = self._scan_for_injection(field_values, context)
-        self._finalize_security_results(context, findings)
+        garak_result = run_garak_security_scan(
+            skill_root=self._resolve_skill_root(context),
+            artifacts_dir=Path(context.artifacts_dir or ".publisher_artifacts"),
+        )
+        context.metadata.extra["garak_security"] = {
+            "status": garak_result.status,
+            "score": garak_result.score,
+            "checks_run": garak_result.checks_run,
+            "command": garak_result.command,
+            "artifact_dir": garak_result.artifact_dir,
+            "reason": garak_result.reason,
+        }
+
+        context.security.checks_run = garak_result.checks_run or ["garak"]
+        if garak_result.status == "scored":
+            context.security.notes.append("NVIDIA garak security scan completed.")
+            self._finalize_security_results(
+                context,
+                findings=garak_result.findings,
+                authoritative_score=garak_result.score,
+            )
+        elif garak_result.reason:
+            context.security.notes.append(f"NVIDIA garak security scan did not produce a score: {garak_result.reason}.")
+            self._finalize_unscored_garak_result(context, garak_result.reason)
+        else:
+            context.security.notes.append("NVIDIA garak security scan did not produce a score.")
+            self._finalize_unscored_garak_result(context, "garak did not produce a scored result")
+
         artifact_path = self._write_security_artifact(context)
         context.add_snapshot(
             stage_name=self.name,
-            status="completed",
+            status="completed" if context.security.scanned else "failed",
             data={
                 "score": context.security.score,
                 "findings": context.security.findings,
@@ -34,8 +60,8 @@ class SecurityStage(PublisherStage):
                 "artifact_path": artifact_path,
             },
             messages=[
-                "Security stage scanned the configured text targets.",
-                "Security score was calculated from deterministic prompt-injection heuristics and promptmap-style rule checks.",
+                "Security stage used NVIDIA garak as the authoritative security source.",
+                "Local prompt-injection heuristics are not used for scoring or publish decisions.",
             ],
         )
 
@@ -44,7 +70,7 @@ class SecurityStage(PublisherStage):
         context.security.scanned = False
         context.security.score = 1.0
         context.security.scan_targets = self._build_scan_targets()
-        context.security.checks_run = self._build_injection_checks()
+        context.security.checks_run = ["garak"]
         context.security.severity_counts = {
             "low": 0,
             "medium": 0,
@@ -53,11 +79,19 @@ class SecurityStage(PublisherStage):
         }
         context.security.decision = "allow"
         context.security.notes = [
-            "This stage is focused on prompt-injection and unsafe instruction detection.",
-            "The current implementation uses deterministic heuristics and does not require an LLM token.",
-            "Promptmap-inspired rule coverage is included as part of the local security scan.",
+            "This stage depends on NVIDIA garak for security findings, score, and publish decision.",
+            "Local prompt-injection checks are retained only as implementation helpers and are not part of the security decision.",
         ]
         context.security.findings = []
+
+    def _resolve_skill_root(self, context: PublishContext) -> Path:
+        """Resolve the skill folder for external security tools."""
+        source_path = Path(context.source.file_path)
+        if source_path.is_dir():
+            return source_path
+        if source_path.name == "SKILL.md":
+            return source_path.parent
+        return source_path.parent
 
     def _build_scan_targets(self) -> list[str]:
         """Return the text-bearing skill fields that should be scanned for injection."""
@@ -525,6 +559,7 @@ class SecurityStage(PublisherStage):
         self,
         context: PublishContext,
         findings: list[dict[str, Any]],
+        authoritative_score: float | None = None,
     ) -> None:
         """Aggregate findings into counts, score, and a simple decision."""
         context.security.findings = findings
@@ -545,13 +580,38 @@ class SecurityStage(PublisherStage):
                 context.security.severity_counts[severity] += 1
                 score -= penalties[severity]
 
-        context.security.score = max(0.0, round(score, 2))
+        if authoritative_score is not None:
+            context.security.score = max(0.0, min(1.0, round(authoritative_score, 2)))
+        else:
+            context.security.score = max(0.0, round(score, 2))
         if context.security.severity_counts["critical"] > 0:
             context.security.decision = "block"
         elif context.security.severity_counts["high"] > 0:
             context.security.decision = "review_required"
         else:
             context.security.decision = "allow"
+
+    def _finalize_unscored_garak_result(
+        self,
+        context: PublishContext,
+        reason: str,
+    ) -> None:
+        """Record an unscored garak result as blocking for a garak-only policy."""
+        context.security.scanned = False
+        context.security.score = None
+        context.security.decision = "block"
+        for severity in context.security.severity_counts:
+            context.security.severity_counts[severity] = 0
+        context.security.severity_counts["critical"] = 1
+        context.security.findings = [
+            self._finding(
+                check="garak:required_scan",
+                severity="critical",
+                field_name="garak",
+                reason="NVIDIA garak is required as the authoritative security source.",
+                evidence=reason,
+            )
+        ]
 
     def _write_security_artifact(self, context: PublishContext) -> str:
         """Persist the phase 4 security results as a JSON artifact."""
@@ -566,6 +626,7 @@ class SecurityStage(PublisherStage):
             "severity_counts": context.security.severity_counts,
             "decision": context.security.decision,
             "findings": context.security.findings,
+            "garak": context.metadata.extra.get("garak_security"),
             "notes": context.security.notes,
         }
         artifact_path.write_text(

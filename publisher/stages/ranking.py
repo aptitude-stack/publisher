@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from publisher.models import PublishContext
+from publisher.domain.models import PublishContext
 from publisher.stages.base import PublisherStage
 
 
@@ -35,7 +35,7 @@ class RankingStage(PublisherStage):
                 "artifact_path": artifact_path,
             },
             messages=[
-                "Ranking stage combined security, token efficiency, compliance, metadata, and instruction quality.",
+                "Ranking stage combined authoritative Garak security, Upskill performance, compliance, metadata, and token efficiency.",
                 "Security can override the publish decision even when a total score exists.",
             ],
         )
@@ -57,8 +57,9 @@ class RankingStage(PublisherStage):
         """Use the security stage score directly."""
         score = context.security.score if context.security.score is not None else 0.0
         context.ranking.criteria_scores["security"] = round(score, 2)
+        source = "NVIDIA garak"
         context.ranking.explanation.append(
-            f"Security score contributes {score:.2f} based on prompt-injection findings."
+            f"Security score contributes {score:.2f} based on {source}."
         )
 
     def _score_performance_exam(self, context: PublishContext) -> None:
@@ -67,7 +68,7 @@ class RankingStage(PublisherStage):
         context.ranking.criteria_scores["performance_exam"] = round(score, 2)
         context.ranking.explanation.append(
             "Performance exam score contributes "
-            f"{score:.2f} based on skill lift {context.performance_exam.skill_lift} "
+            f"{score:.2f} from Upskill, based on skill lift {context.performance_exam.skill_lift} "
             f"and token delta {context.performance_exam.token_delta}."
         )
 

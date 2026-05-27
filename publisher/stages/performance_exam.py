@@ -1,26 +1,27 @@
-"""Phase 6: evaluate measured skill performance evidence."""
+"""Phase 6: evaluate measured skill performance evidence from Upskill."""
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
-from publisher.models import PublishContext
+from publisher.domain.models import PublishContext
+from publisher.integrations.upskill_eval import run_upskill_evaluation
 from publisher.stages.base import PublisherStage
 
 
 class PerformanceExamStage(PublisherStage):
-    """Build a deterministic performance-exam artifact for ranking."""
+    """Build a performance-exam artifact from Hugging Face Upskill results."""
 
     name = "performance_exam"
 
     def run(self, context: PublishContext) -> None:
         self._reset_exam_state(context)
-        self._derive_exam_metrics(context)
+        self._run_upskill_exam(context)
         artifact_path = self._write_exam_artifact(context)
         context.add_snapshot(
             stage_name=self.name,
-            status="completed",
+            status="completed" if context.performance_exam.score is not None else "failed",
             data={
                 "score": context.performance_exam.score,
                 "passed": context.performance_exam.passed,
@@ -34,8 +35,8 @@ class PerformanceExamStage(PublisherStage):
                 "artifact_path": artifact_path,
             },
             messages=[
-                "Performance exam estimated whether the skill improves task success and token usage.",
-                "This placeholder exam gives ranking a dedicated measured-performance field to consume.",
+                "Performance exam consumed Hugging Face Upskill as the sole performance source.",
+                "No local performance estimate is produced when Upskill is unavailable or unscored.",
             ],
         )
 
@@ -53,66 +54,81 @@ class PerformanceExamStage(PublisherStage):
         exam.token_delta = None
         exam.efficiency_label = None
         exam.notes = [
-            "Performance exam is a deterministic placeholder until live benchmark execution is wired in.",
-            "The field is intended to hold upskill-style evidence such as success lift and token deltas.",
+            "Performance exam depends only on Hugging Face upskill evidence.",
+            "Set PUBLISHER_UPSKILL_COMMAND or install upskill to enable external skill evaluation.",
         ]
 
-    def _derive_exam_metrics(self, context: PublishContext) -> None:
+    def _run_upskill_exam(self, context: PublishContext) -> None:
+        """Run Upskill and copy measured metrics into the performance exam."""
+        result = run_upskill_evaluation(
+            skill_root=self._resolve_skill_root(context),
+            artifacts_dir=Path(context.artifacts_dir or ".publisher_artifacts"),
+        )
+        context.metadata.extra["upskill_evaluation"] = {
+            "status": result.status,
+            "score": result.score,
+            "passed": result.passed,
+            "test_case_count": result.test_case_count,
+            "baseline_success_rate": result.baseline_success_rate,
+            "skilled_success_rate": result.skilled_success_rate,
+            "skill_lift": result.skill_lift,
+            "baseline_avg_tokens": result.baseline_avg_tokens,
+            "skilled_avg_tokens": result.skilled_avg_tokens,
+            "token_delta": result.token_delta,
+            "models_tested": result.models_tested,
+            "validation_errors": result.validation_errors,
+            "validation_warnings": result.validation_warnings,
+            "command": result.command,
+            "artifact_dir": result.artifact_dir,
+            "reason": result.reason,
+        }
+        if result.status != "scored":
+            reason = result.reason or "upskill did not produce a scored result"
+            context.performance_exam.notes.append(f"Upskill performance metrics unavailable: {reason}.")
+            return
+
         exam = context.performance_exam
-        token_estimate = context.metadata.token_estimate or 900
-        findings_count = len(context.security.findings)
-        validation_penalty = 0.20 if context.validation.errors else 0.0
-        warning_penalty = min(0.10, len(context.validation.warnings) * 0.05)
-        security_penalty = min(0.30, findings_count * 0.08)
-        quality_signal = self._quality_signal(context)
-        structural_signal = max(0.20, round(1.0 - warning_penalty - validation_penalty, 2))
+        exam.score = result.score
+        exam.passed = bool(result.passed)
+        exam.test_case_count = result.test_case_count or 0
+        exam.models_tested = result.models_tested
+        exam.baseline_success_rate = result.baseline_success_rate
+        exam.skilled_success_rate = result.skilled_success_rate
+        exam.skill_lift = result.skill_lift
+        exam.baseline_avg_tokens = result.baseline_avg_tokens
+        exam.skilled_avg_tokens = result.skilled_avg_tokens
+        exam.token_delta = result.token_delta
+        if result.token_delta is not None:
+            exam.efficiency_label = "improved" if result.token_delta < 0 else "neutral"
+        self._apply_upskill_token_estimate(context)
+        exam.notes.append("Performance metrics came from Hugging Face Upskill.")
 
-        baseline = max(0.35, round(0.58 - validation_penalty - warning_penalty - security_penalty, 2))
-        lift = max(
-            0.0,
-            round(
-                (0.18 + (context.security.score or 0.0) * 0.10)
-                * quality_signal
-                * structural_signal,
-                2,
-            ),
+    def _apply_upskill_token_estimate(self, context: PublishContext) -> None:
+        """Use Upskill's measured with-skill token average as metadata token estimate."""
+        skilled_avg_tokens = context.performance_exam.skilled_avg_tokens
+        if skilled_avg_tokens is None or skilled_avg_tokens <= 0:
+            context.metadata.extra["token_estimate_source"] = "publisher_content_heuristic"
+            context.performance_exam.notes.append(
+                "Upskill did not provide a positive skilled_avg_tokens value; metadata token_estimate was left unchanged."
+            )
+            return
+
+        previous_estimate = context.metadata.token_estimate
+        context.metadata.token_estimate = skilled_avg_tokens
+        context.metadata.extra["token_estimate_source"] = "upskill.skilled_avg_tokens"
+        context.metadata.extra["token_estimate_previous"] = previous_estimate
+        context.performance_exam.notes.append(
+            "Metadata token_estimate was updated from Upskill skilled_avg_tokens."
         )
-        skilled = min(1.0, round(baseline + lift, 2))
 
-        token_savings = max(40, min(320, int(token_estimate * 0.18)))
-        skilled_tokens = max(80, token_estimate - token_savings)
-        token_delta = skilled_tokens - token_estimate
-
-        exam.test_case_count = 3
-        exam.models_tested = ["publisher-sonnet-baseline"]
-        exam.baseline_success_rate = baseline
-        exam.skilled_success_rate = skilled
-        exam.skill_lift = round(skilled - baseline, 2)
-        exam.baseline_avg_tokens = token_estimate
-        exam.skilled_avg_tokens = skilled_tokens
-        exam.token_delta = token_delta
-        exam.efficiency_label = "improved" if token_delta < 0 else "neutral"
-
-        normalized_lift = min(1.0, exam.skill_lift / 0.30) if exam.skill_lift is not None else 0.0
-        normalized_efficiency = min(1.0, abs(token_delta) / max(token_estimate, 1)) if token_delta < 0 else 0.0
-        exam.score = round(
-            (normalized_lift * 0.55)
-            + (normalized_efficiency * 0.10)
-            + (quality_signal * 0.25)
-            + (structural_signal * 0.10),
-            2,
-        )
-        exam.passed = skilled >= baseline and (context.security.decision != "block")
-
-    def _quality_signal(self, context: PublishContext) -> float:
-        """Blend declared maturity and security metadata into one quality signal."""
-        maturity = context.metadata.maturity_score if context.metadata.maturity_score is not None else 0.5
-        declared_security = (
-            context.metadata.security_score
-            if context.metadata.security_score is not None
-            else (context.security.score if context.security.score is not None else 0.5)
-        )
-        return round((maturity + declared_security) / 2, 2)
+    def _resolve_skill_root(self, context: PublishContext) -> Path:
+        """Resolve the skill folder for Upskill."""
+        source_path = Path(context.source.file_path)
+        if source_path.is_dir():
+            return source_path
+        if source_path.name == "SKILL.md":
+            return source_path.parent
+        return source_path.parent
 
     def _write_exam_artifact(self, context: PublishContext) -> str:
         artifacts_dir = Path(context.artifacts_dir or ".publisher_artifacts")
@@ -132,6 +148,9 @@ class PerformanceExamStage(PublisherStage):
             "skilled_avg_tokens": exam.skilled_avg_tokens,
             "token_delta": exam.token_delta,
             "efficiency_label": exam.efficiency_label,
+            "metadata_token_estimate": context.metadata.token_estimate,
+            "metadata_token_estimate_source": context.metadata.extra.get("token_estimate_source"),
+            "upskill": context.metadata.extra.get("upskill_evaluation"),
             "notes": exam.notes,
         }
         artifact_path.write_text(

@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 import subprocess
 
-from publisher.models import PublishContext
+from publisher.domain.models import PublishContext
 from publisher.stages.base import PublisherStage
 
 

@@ -1,4 +1,4 @@
-"""Phase 5: validation and error verification placeholder."""
+"""Phase 5: validate the Anthropic SKILL.md file contract."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from publisher.models import PublishContext
+from publisher.domain.models import PublishContext
 from publisher.stages.base import PublisherStage
 
 
@@ -31,7 +31,7 @@ class ValidationStage(PublisherStage):
             self._validate_frontmatter(context, skill_root=skill_root, frontmatter=frontmatter)
             self._validate_body(context, body=body)
 
-        self._validate_pipeline_state(context)
+        context.validation.passed = len(context.validation.errors) == 0
         artifact_path = self._write_validation_artifact(
             context,
             skill_root=skill_root,
@@ -49,7 +49,7 @@ class ValidationStage(PublisherStage):
             },
             messages=[
                 "Validation stage checked Anthropic skill structure and frontmatter rules.",
-                "Validation result is based on filesystem structure plus publisher pipeline state.",
+                "Validation result is based only on the skill folder and SKILL.md contract.",
             ],
         )
 
@@ -59,7 +59,7 @@ class ValidationStage(PublisherStage):
         context.validation.errors = []
         context.validation.warnings = []
         context.validation.notes = [
-            "Validation enforces Anthropic SKILL.md structure and publisher readiness.",
+            "Validation enforces Anthropic SKILL.md structure only.",
         ]
         context.validation.checks_run = [
             "skill_root_exists",
@@ -80,9 +80,6 @@ class ValidationStage(PublisherStage):
             "body_instructions_heading",
             "body_examples_presence",
             "body_troubleshooting_presence",
-            "identity_stage_completed",
-            "metadata_stage_completed",
-            "security_stage_completed",
         ]
 
     def _resolve_skill_root(self, context: PublishContext) -> Path:
@@ -275,46 +272,6 @@ class ValidationStage(PublisherStage):
             context.validation.warnings.append(
                 "SKILL.md should include a troubleshooting section for common failures."
             )
-
-    def _validate_pipeline_state(self, context: PublishContext) -> None:
-        """Validate that previous pipeline stages completed successfully enough to publish."""
-        if not context.identity.slug or not context.identity.version or not context.identity.intent:
-            context.validation.errors.append(
-                "Identity stage is incomplete: slug, version, and intent are required."
-            )
-
-        required_metadata_missing = []
-        if not context.metadata.name:
-            required_metadata_missing.append("name")
-        if not context.metadata.description:
-            required_metadata_missing.append("description")
-        if not context.metadata.tags:
-            required_metadata_missing.append("tags")
-        if context.metadata.inputs_schema is None:
-            required_metadata_missing.append("inputs_schema")
-        if context.metadata.outputs_schema is None:
-            required_metadata_missing.append("outputs_schema")
-        if required_metadata_missing:
-            context.validation.errors.append(
-                "Metadata stage is incomplete: missing "
-                + ", ".join(required_metadata_missing)
-                + "."
-            )
-
-        if not context.security.scanned:
-            context.validation.errors.append(
-                "Security stage must run before validation can pass."
-            )
-        elif context.security.decision == "block":
-            context.validation.errors.append(
-                "Security stage blocked the skill due to high-risk findings."
-            )
-        elif context.security.decision == "review_required":
-            context.validation.warnings.append(
-                "Security stage requires manual review before publish."
-            )
-
-        context.validation.passed = len(context.validation.errors) == 0
 
     def _write_validation_artifact(
         self,

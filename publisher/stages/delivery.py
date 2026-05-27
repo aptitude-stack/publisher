@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from publisher.models import PublishContext
+from publisher.domain.models import PublishContext
 from publisher.stages.base import PublisherStage
 
 

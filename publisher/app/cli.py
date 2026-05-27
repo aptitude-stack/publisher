@@ -8,9 +8,9 @@ import os
 import sys
 from pathlib import Path
 
-from publisher.bundle import build_bundle_bytes
-from publisher.pipeline import PublisherPipeline
-from publisher.registry_client import publish_to_registry
+from publisher.artifacts.bundle import build_bundle_bytes
+from publisher.app.pipeline import PublisherPipeline
+from publisher.registry.client import publish_to_registry
 
 
 _DEFAULT_REGISTRY_URL = "http://127.0.0.1:8000"

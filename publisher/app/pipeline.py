@@ -9,7 +9,7 @@ from publisher.gates.identity import IdentityGate
 from publisher.gates.metadata import MetadataGate
 from publisher.gates.security import SecurityGate
 from publisher.gates.validation import ValidationGate
-from publisher.models import PublishContext, SkillSource
+from publisher.domain.models import PublishContext, SkillSource
 from publisher.stages.compression import CompressionStage
 from publisher.stages.delivery import DeliveryStage
 from publisher.stages.discovery import DiscoveryStage

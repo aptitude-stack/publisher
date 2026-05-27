@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from publisher.models import PublishContext
+from publisher.domain.models import PublishContext
 from publisher.stages.base import PublisherStage
 
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 
 from publisher.gates.base import PublisherGate
-from publisher.models import PublishContext
+from publisher.domain.models import PublishContext
 
 
 class IdentityGate(PublisherGate):

@@ -8,6 +8,7 @@ __pycache__/
 venv/
 env/
 ENV/
+.env
 
 # Distribution / packaging
 build/
@@ -32,6 +33,8 @@ htmlcov/
 *.pid
 *.seed
 *.sqlite3
+.publisher_artifacts/
+*/.publisher_artifacts/
 
 # FastAPI local uploads/temp (uncomment if used)
 # uploads/
@@ -52,4 +55,3 @@ uv-cache/
 # Keep uv.lock tracked for reproducible builds.
 # Uncomment to ignore it:
 # uv.lock
-

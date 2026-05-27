@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from publisher.integrations.github_api import fetch_repository_signals
-from publisher.models import PublishContext
+from publisher.domain.models import PublishContext
 from publisher.stages.base import PublisherStage
 
 
@@ -80,7 +80,7 @@ class MetadataStage(PublisherStage):
 
         context.metadata.notes = [
             "Metadata values are extracted from SKILL.md inside the skill folder.",
-            "Token estimate is calculated automatically from the skill content.",
+            "Token estimate starts as a publisher content heuristic and is replaced by Upskill measured tokens when available.",
             "Word count is a publisher-side field and is not part of the server contract.",
         ]
         context.metadata.extra.update(
@@ -97,6 +97,7 @@ class MetadataStage(PublisherStage):
                 "compatibility": metadata_payload.get("compatibility"),
                 "license": metadata_payload.get("license"),
                 "declared_token_estimate": declared_token_estimate,
+                "token_estimate_source": "publisher_content_heuristic",
                 "server_supported_fields": [
                     "name",
                     "description",
@@ -106,6 +107,17 @@ class MetadataStage(PublisherStage):
                     "token_estimate",
                     "maturity_score",
                     "security_score",
+                ],
+                "author_required_fields": [
+                    "name",
+                    "description",
+                    "tags",
+                    "inputs_schema",
+                    "outputs_schema",
+                ],
+                "publisher_generated_fields": [
+                    "token_estimate",
+                    "word_count",
                 ],
             }
         )

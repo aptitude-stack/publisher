@@ -8,5 +8,11 @@ dependencies = [
     "zstandard>=0.23,<0.24",
 ]
 
+[project.optional-dependencies]
+evaluators = [
+    "garak",
+    "upskill",
+]
+
 [project.scripts]
-aptitude-publisher = "publisher.cli:main"
+aptitude-publisher = "publisher.app.cli:main"

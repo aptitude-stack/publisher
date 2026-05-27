@@ -7,7 +7,7 @@ from io import BytesIO
 from pathlib import Path
 import subprocess
 
-from publisher.models import PublishContext
+from publisher.domain.models import PublishContext
 
 _BUNDLE_ROOT = "skill-bundle"
 
