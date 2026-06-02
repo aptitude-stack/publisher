@@ -45,21 +45,26 @@ def run_garak_security_scan(*, skill_root: Path, artifacts_dir: Path) -> GarakSe
     _reset_artifact_dir(garak_dir)
     garak_dir.mkdir(parents=True, exist_ok=True)
 
+    if _target_configuration_missing():
+        return GarakSecurityResult(
+            status="not_available",
+            artifact_dir=str(garak_dir),
+            reason=_configuration_reason(skill_root=skill_root),
+        )
+
     command = _build_command(skill_root=skill_root, artifact_dir=garak_dir)
     if command is None:
         return GarakSecurityResult(
-            status="not_configured",
+            status="not_available",
             artifact_dir=str(garak_dir),
-            reason=(
-                "install garak and set GARAK_TARGET_TYPE/GARAK_TARGET_NAME, "
-                "or set PUBLISHER_GARAK_COMMAND"
-            ),
+            reason=_configuration_reason(skill_root=skill_root),
         )
 
     try:
         completed = run_command(
             command,
             cwd=skill_root,
+            env=_garak_environment(garak_dir),
             timeout_seconds=int(os.environ.get("PUBLISHER_GARAK_TIMEOUT_SECONDS", _DEFAULT_TIMEOUT_SECONDS)),
         )
     except (OSError, subprocess.TimeoutExpired) as exc:  # type: ignore[name-defined]
@@ -72,21 +77,26 @@ def run_garak_security_scan(*, skill_root: Path, artifacts_dir: Path) -> GarakSe
 
     (garak_dir / "stdout.txt").write_text(completed.stdout, encoding="utf-8")
     (garak_dir / "stderr.txt").write_text(completed.stderr, encoding="utf-8")
+    if completed.returncode != 0:
+        return GarakSecurityResult(
+            status="failed",
+            command=command,
+            artifact_dir=str(garak_dir),
+            reason=_failure_reason(completed.returncode, completed.stdout, completed.stderr),
+        )
+
     findings = _load_findings(garak_dir)
     if not findings:
         findings = _findings_from_output(completed.stdout + "\n" + completed.stderr)
 
     score = _score_from_findings(findings)
-    status = "scored" if completed.returncode == 0 else "failed"
-    reason = None if completed.returncode == 0 else f"garak exited with status {completed.returncode}"
     return GarakSecurityResult(
-        status=status,
+        status="scored",
         score=score,
         findings=findings,
         checks_run=sorted({str(item.get("check", "garak")) for item in findings}) or ["garak"],
         command=command,
         artifact_dir=str(garak_dir),
-        reason=reason,
     )
 
 
@@ -131,6 +141,44 @@ def _build_command(*, skill_root: Path, artifact_dir: Path) -> list[str] | None:
     if detector:
         command.extend(["--detectors", detector])
     return command
+
+
+def _target_configuration_missing() -> bool:
+    return (
+        not os.environ.get("PUBLISHER_GARAK_COMMAND")
+        and (
+            not os.environ.get("GARAK_TARGET_TYPE")
+            or not os.environ.get("GARAK_TARGET_NAME")
+        )
+    )
+
+
+def _configuration_reason(*, skill_root: Path) -> str:
+    if os.environ.get("PUBLISHER_GARAK_COMMAND"):
+        return "PUBLISHER_GARAK_COMMAND was configured but could not be rendered."
+
+    executable = resolve_executable("garak", start=skill_root)
+    missing: list[str] = []
+    if not executable:
+        missing.append("garak executable")
+    if not os.environ.get("GARAK_TARGET_TYPE"):
+        missing.append("GARAK_TARGET_TYPE")
+    if not os.environ.get("GARAK_TARGET_NAME"):
+        missing.append("GARAK_TARGET_NAME")
+
+    if missing:
+        return "missing " + ", ".join(missing)
+    return "garak is installed, but target configuration is incomplete"
+
+
+def _garak_environment(artifact_dir: Path) -> dict[str, str]:
+    """Use artifact-local Garak state when the caller has no writable home config."""
+    env = dict(os.environ)
+    state_root = artifact_dir / "state"
+    env.setdefault("XDG_CONFIG_HOME", str(state_root / "config"))
+    env.setdefault("XDG_DATA_HOME", str(state_root / "data"))
+    env.setdefault("XDG_CACHE_HOME", str(state_root / "cache"))
+    return env
 
 
 def _write_runtime_config(artifact_dir: Path) -> Path | None:
@@ -250,6 +298,19 @@ def _findings_from_output(output: str) -> list[dict[str, Any]]:
             "evidence": "garak textual output",
         }
     ]
+
+
+def _failure_reason(returncode: int, stdout: str, stderr: str) -> str:
+    output = "\n".join(part.strip() for part in (stderr, stdout) if part.strip())
+    if not output:
+        return f"garak exited with status {returncode}"
+    lines = [line.strip() for line in output.splitlines() if line.strip()]
+    error_terms = ("missing", "error", "exception", "failed", "permission", "credential")
+    first_relevant_line = next(
+        (line for line in lines if any(term in line.lower() for term in error_terms)),
+        lines[0],
+    )
+    return f"garak exited with status {returncode}: {first_relevant_line}"
 
 
 def _score_from_findings(findings: list[dict[str, Any]]) -> float:

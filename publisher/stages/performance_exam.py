@@ -84,7 +84,9 @@ class PerformanceExamStage(PublisherStage):
         }
         if result.status != "scored":
             reason = result.reason or "upskill did not produce a scored result"
-            context.performance_exam.notes.append(f"Upskill performance metrics unavailable: {reason}.")
+            context.performance_exam.notes.append(
+                f"Upskill evaluator {result.status}: performance metrics unavailable: {reason}."
+            )
             return
 
         exam = context.performance_exam

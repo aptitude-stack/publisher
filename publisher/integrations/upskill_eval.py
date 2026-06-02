@@ -61,7 +61,7 @@ def run_upskill_evaluation(*, skill_root: Path, artifacts_dir: Path) -> UpskillE
     command = _build_command(skill_root=skill_root, artifact_dir=upskill_dir)
     if command is None:
         return UpskillEvaluation(
-            status="not_configured",
+            status="not_available",
             artifact_dir=str(upskill_dir),
             reason="install upskill or set PUBLISHER_UPSKILL_COMMAND",
         )
@@ -162,7 +162,7 @@ def _run_direct_openai_compatible_eval(*, skill_root: Path) -> UpskillEvaluation
         from upskill.evaluate import evaluate_skill
         from upskill.models import Skill, TestCase
     except ImportError as exc:
-        return UpskillEvaluation(status="not_configured", reason=str(exc))
+        return UpskillEvaluation(status="not_available", reason=str(exc))
 
     try:
         skill = _load_upskill_skill(skill_root, Skill)

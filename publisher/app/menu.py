@@ -6,7 +6,6 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 import os
 from pathlib import Path
-import re
 import sys
 from typing import Any, Literal, Sequence, TypeVar
 
@@ -22,6 +21,7 @@ from publisher.app.cli import (
     _default_publish_token,
     _default_registry_url,
     _load_local_env_defaults,
+    _registry_result_lines,
     _relationship_alert_lines,
     _relationship_check_token,
 )
@@ -38,6 +38,8 @@ except ModuleNotFoundError:  # pragma: no cover - platform fallback
 
 
 Action = Literal["inspect", "publish", "help", "exit"]
+FailureAction = Literal["upload_another", "main_menu"]
+SkillSource = Literal["local", "path"]
 Intent = Literal["create_skill", "publish_version"]
 ScanProfile = Literal["fast", "slow"]
 TrustTier = Literal["untrusted", "internal", "verified"]
@@ -45,18 +47,17 @@ ArtifactOrigin = Literal["internal", "imported", "verified", "restricted"]
 T = TypeVar("T")
 
 CONSOLE = Console()
-SEMVER_PATTERN = re.compile(r"^\d+\.\d+\.\d+$")
 WORDMARK = (
     "\n"
-    "   ______          __        Publisher\n"
-    "  /\\  _  \\        /\\ \\__     \n"
-    "  \\ \\ \\L\\ \\  _____\\ \\ ,_\\    \n"
-    "   \\ \\  __ \\/\\ '__`\\ \\ \\/    \n"
-    "    \\ \\ \\/\\ \\ \\ \\L\\ \\ \\ \\_  \n"
-    "     \\ \\_\\ \\_\\ \\ ,__/\\ \\__\\ \n"
-    "      \\/_/\\/_/\\ \\ \\/  \\/__/ \n"
-    "               \\ \\_\\         \n"
-    "                \\/_/         \n"
+    "   ______          __          \n"
+    "  /\\  _  \\        /\\ \\__       \n"
+    "  \\ \\ \\L\\ \\  _____\\ \\ ,_\\      \n"
+    "   \\ \\  __ \\/\\ '__`\\ \\ \\/      \n"
+    "    \\ \\ \\/\\ \\ \\ \\L\\ \\ \\ \\_  __ \n"
+    "     \\ \\_\\ \\_\\ \\ ,__/\\ \\__\\/\\_\\\n"
+    "      \\/_/\\/_/\\ \\ \\/  \\/__/\\/_/\n"
+    "               \\ \\_\\           \n"
+    "                \\/_/           \n"
 )
 
 
@@ -77,7 +78,6 @@ class PublishPlan:
     action: Action
     skill_path: Path
     slug: str | None
-    version: str
     intent: Intent
     trust_tier: TrustTier
     namespace: str
@@ -93,54 +93,65 @@ def run_menu() -> int:
     _load_local_env_defaults()
     _render_header()
 
-    while True:
-        action = _select(
-            "What do you want to do?",
-            [
-                ("Full inspect", "inspect"),
-                ("Publish to registry", "publish"),
-                ("Help", "help"),
-                ("Exit", "exit"),
-            ],
-            descriptions={
-                "inspect": "Run the full pipeline and show the evaluation report.",
-                "publish": "Run all gates, build the bundle, and upload to the registry.",
-                "help": "Show what each publisher phase does.",
-                "exit": "Leave the publisher wizard.",
-            },
-        )
-        if action == "help":
-            _render_help()
-            continue
-        if action == "exit":
-            CONSOLE.print("[grey70]No publish workflow was started.[/grey70]")
-            return 0
+    try:
+        while True:
+            action = _select(
+                "Choose a flow",
+                [
+                    ("Full inspect", "inspect"),
+                    ("Publish to registry", "publish"),
+                    ("Help", "help"),
+                    ("Exit", "exit"),
+                ],
+                subtitle="Start with inspect, publish, or help.",
+                descriptions={
+                    "inspect": "Run the full pipeline and show the evaluation report.",
+                    "publish": "Run all gates, build the bundle, and upload to the registry.",
+                    "help": "Show what each publisher phase does.",
+                    "exit": "Leave the publisher wizard.",
+                },
+            )
+            if action == "help":
+                _render_help()
+                continue
+            if action == "exit":
+                CONSOLE.print("[grey70]No publish workflow was started.[/grey70]")
+                return 0
 
-        plan = _build_publish_plan(action)
-        _render_plan(plan)
-        if not _confirm("Run this workflow?", default=True):
-            CONSOLE.print("[grey70]Workflow cancelled.[/grey70]")
-            continue
-        return _execute_plan(plan)
+            plan = _build_publish_plan(action)
+            _render_plan(plan)
+            if not _confirm("Run this workflow?", default=True):
+                CONSOLE.print("[grey70]Workflow cancelled.[/grey70]")
+                continue
+            result = _execute_plan(plan)
+            if result == 0:
+                continue
+
+            while result != 0:
+                failure_action = _select_failure_action()
+                if failure_action == "main_menu":
+                    break
+
+                plan = _build_publish_plan("publish")
+                _render_plan(plan)
+                if not _confirm("Run this workflow?", default=True):
+                    CONSOLE.print("[grey70]Workflow cancelled.[/grey70]")
+                    break
+                result = _execute_plan(plan)
+                if result == 0:
+                    break
+    except KeyboardInterrupt:
+        CONSOLE.print("[grey70]No publish workflow was started.[/grey70]")
+        return 0
 
 
 def _render_header() -> None:
-    registry_url = _default_registry_url()
     CONSOLE.print(Text(WORDMARK, style="bold white"))
-    summary = Table.grid(expand=True, padding=(0, 2))
-    summary.add_column(style="grey70")
-    summary.add_column(style="white")
-    summary.add_row("Registry", registry_url)
-    summary.add_row("Mode", "guided publish workflow")
     CONSOLE.print(
-        Panel(
-            summary,
-            title="Aptitude Publisher",
-            border_style="grey35",
-            box=box.ROUNDED,
-            padding=(1, 1),
-        )
+        "Aptitude Publisher - Review-first CLI for validating and publishing skills."
     )
+    CONSOLE.print("─" * CONSOLE.width, style="grey35")
+    CONSOLE.print()
 
 
 def _render_help() -> None:
@@ -172,11 +183,14 @@ def _render_help() -> None:
 def _build_publish_plan(action: Action) -> PublishPlan:
     skills = _discover_skills(Path.cwd())
     skill = _select_skill(skills)
-    default_version = skill.version if skill is not None else "1.0.0"
-    default_intent = _normalize_intent(skill.intent if skill is not None else None)
-    skill_path = skill.path if skill is not None else _prompt_path("Skill folder")
+    if skill is None:
+        skill_path = _prompt_path("Skill folder")
+        skill = _read_menu_skill(skill_path / "SKILL.md")
+    else:
+        skill_path = skill.path
 
-    version = _prompt_semver("Version", default=default_version)
+    default_intent = _normalize_intent(skill.intent if skill is not None else None)
+
     intent = _select(
         "Publish intent",
         [
@@ -197,8 +211,8 @@ def _build_publish_plan(action: Action) -> PublishPlan:
         ],
         default="fast",
         descriptions={
-            "fast": "Use faster Garak/Upskill settings for local iteration.",
-            "slow": "Use broader Garak/Upskill behavior for deeper review.",
+            "fast": "Use quicker checks for local iteration.",
+            "slow": "Use broader checks for deeper review.",
         },
     )
 
@@ -206,7 +220,6 @@ def _build_publish_plan(action: Action) -> PublishPlan:
         action=action,
         skill_path=skill_path.resolve(),
         slug=None,
-        version=version,
         intent=intent,
         trust_tier="untrusted",
         namespace="public",
@@ -225,34 +238,71 @@ def _discover_skills(root: Path) -> list[MenuSkill]:
     for skill_file in sorted(skill_files):
         if skill_file.parent.name.startswith("."):
             continue
-        frontmatter = _read_frontmatter(skill_file)
-        metadata = frontmatter.get("metadata", {})
-        if not isinstance(metadata, dict):
-            metadata = {}
-        skills.append(
-            MenuSkill(
-                path=skill_file.parent,
-                name=str(frontmatter.get("name") or skill_file.parent.name),
-                version=str(metadata.get("version") or "1.0.0"),
-                intent=str(metadata.get("intent") or "create_skill"),
-            )
-        )
+        skill = _read_menu_skill(skill_file)
+        if skill is not None:
+            skills.append(skill)
     return skills
 
 
+def _read_menu_skill(skill_file: Path) -> MenuSkill | None:
+    if not skill_file.is_file():
+        return None
+
+    frontmatter = _read_frontmatter(skill_file)
+    metadata = frontmatter.get("metadata", {})
+    if not isinstance(metadata, dict):
+        metadata = {}
+    return MenuSkill(
+        path=skill_file.parent,
+        name=str(frontmatter.get("name") or skill_file.parent.name),
+        version=str(metadata.get("version") or "1.0.0"),
+        intent=str(metadata.get("intent") or "create_skill"),
+    )
+
+
 def _select_skill(skills: list[MenuSkill]) -> MenuSkill | None:
+    if not skills:
+        return None
+
+    source = _select(
+        "Skill source",
+        [
+            ("Choose from local skills", "local"),
+            ("Upload from path", "path"),
+        ],
+        descriptions={
+            "local": "Select a skill discovered in this publisher workspace.",
+            "path": "Enter a skill folder outside the local list.",
+        },
+    )
+    if source == "path":
+        return None
+
     options: list[tuple[str, MenuSkill | None]] = [
         (f"{skill.name} ({skill.version})", skill) for skill in skills
     ]
-    options.append(("Enter a skill path manually", None))
     return _select(
-        "Skill source",
+        "Local skill",
         options,
         descriptions={
             skill: str(skill.path)
             for skill in skills
-        }
-        | {None: "Use this when the skill lives outside the publisher repo."},
+        },
+    )
+
+
+def _select_failure_action() -> FailureAction:
+    return _select(
+        "Workflow failed",
+        [
+            ("Upload another skill", "upload_another"),
+            ("Back to main menu", "main_menu"),
+        ],
+        subtitle="Choose what to do next.",
+        descriptions={
+            "upload_another": "Start a new publish workflow with a different skill.",
+            "main_menu": "Return to the first menu.",
+        },
     )
 
 
@@ -262,13 +312,13 @@ def _execute_plan(plan: PublishPlan) -> int:
     _render_pipeline_report(context)
 
     if plan.action == "inspect":
-        return 0 if context.ranking.publish_decision != "block" else 1
+        return 0 if _publish_payload_ready(context) and context.ranking.publish_decision != "block" else 1
 
-    if context.ranking.publish_decision == "block":
+    if not _publish_payload_ready(context) or context.ranking.publish_decision == "block":
         reasons = _format_gate_failures(context)
         CONSOLE.print(
             Panel(
-                "[red]Publish blocked.[/red]"
+                "[red]Publish blocked before registry upload.[/red]"
                 + (f"\n\n{reasons}" if reasons else ""),
                 title="Publish Decision",
                 border_style="red",
@@ -322,7 +372,7 @@ def _run_pipeline(plan: PublishPlan) -> PublishContext:
     context = pipeline.create_context(
         file_path=str(plan.skill_path),
         slug_override=plan.slug,
-        version_override=plan.version,
+        version_override=None,
         intent_override=plan.intent,
         trust_tier=plan.trust_tier,
         namespace=plan.namespace,
@@ -340,7 +390,7 @@ def _render_plan(plan: PublishPlan) -> None:
     table.add_column(style="white")
     table.add_row("Action", _action_label(plan.action))
     table.add_row("Skill", str(plan.skill_path))
-    table.add_row("Version", plan.version)
+    table.add_row("Version", "from SKILL.md metadata")
     table.add_row("Intent", plan.intent)
     table.add_row("Inspection depth", _scan_profile_label(plan.scan_profile))
     table.add_row("Trust", plan.trust_tier)
@@ -377,8 +427,10 @@ def _render_pipeline_report(context: PublishContext) -> None:
     evaluation.add_column("Signal", style="grey70")
     evaluation.add_column("Value", style="white")
     evaluation.add_row("Validation", "passed" if context.validation.passed else "failed")
+    evaluation.add_row("Garak status", str(context.metadata.extra.get("garak_security", {}).get("status")))
     evaluation.add_row("Security score", str(context.security.score))
     evaluation.add_row("Security gate", context.security.decision)
+    evaluation.add_row("Upskill status", str(context.metadata.extra.get("upskill_evaluation", {}).get("status")))
     evaluation.add_row("Performance", str(context.performance_exam.score))
     evaluation.add_row("Lift", str(context.performance_exam.skill_lift))
     evaluation.add_row("Token delta", str(context.performance_exam.token_delta))
@@ -435,6 +487,25 @@ def _render_pipeline_report(context: PublishContext) -> None:
                 border_style="red",
             )
         )
+    garak_status = context.metadata.extra.get("garak_security")
+    if isinstance(garak_status, dict):
+        security_evaluator = Table(
+            show_header=True,
+            header_style="grey70",
+            border_style="grey35",
+            box=box.ROUNDED,
+            expand=True,
+        )
+        security_evaluator.add_column("Signal", style="grey70")
+        security_evaluator.add_column("Value", style="white")
+        security_evaluator.add_row("Evaluator status", str(garak_status.get("status")))
+        security_evaluator.add_row("Score", str(garak_status.get("score")))
+        security_evaluator.add_row("Checks", ", ".join(garak_status.get("checks_run") or []) or "none")
+        security_evaluator.add_row("Command", " ".join(garak_status.get("command") or []) or "none")
+        security_evaluator.add_row("Artifact dir", str(garak_status.get("artifact_dir")))
+        security_evaluator.add_row("Reason", str(garak_status.get("reason")))
+        border_style = "red" if garak_status.get("status") in {"not_available", "failed"} else "yellow"
+        panels.append(Panel(security_evaluator, title="Garak Evaluator", border_style=border_style))
     if context.security.findings:
         findings = Table(
             show_header=True,
@@ -465,6 +536,10 @@ def _render_pipeline_report(context: PublishContext) -> None:
         )
         upskill.add_column("Signal", style="grey70")
         upskill.add_column("Value", style="white")
+        upskill_status = context.metadata.extra.get("upskill_evaluation", {})
+        if isinstance(upskill_status, dict):
+            upskill.add_row("Evaluator status", str(upskill_status.get("status")))
+            upskill.add_row("Reason", str(upskill_status.get("reason")))
         upskill.add_row("Status", "passed" if context.performance_exam.passed else "not passed")
         upskill.add_row("Score", str(context.performance_exam.score))
         upskill.add_row("Models", ", ".join(context.performance_exam.models_tested) or "none")
@@ -482,7 +557,7 @@ def _render_pipeline_report(context: PublishContext) -> None:
             upskill.add_row("Explanation", explanation)
         if context.performance_exam.notes:
             upskill.add_row("Notes", "\n".join(context.performance_exam.notes))
-        panels.append(Panel(upskill, title="Upskill Findings", border_style="yellow"))
+        panels.append(Panel(upskill, title="Upskill Evaluator", border_style="yellow"))
     CONSOLE.print(Group(*panels))
 
 
@@ -517,11 +592,10 @@ def _render_registry_result(result) -> None:
     table = Table.grid(expand=True, padding=(0, 2))
     table.add_column(style="grey70", no_wrap=True)
     table.add_column(style="white")
-    table.add_row("Status", str(result.status_code))
-    if result.request_id:
-        table.add_row("Request id", result.request_id)
-    CONSOLE.print(Panel(table, title="Registry Result", border_style="grey35"))
-    CONSOLE.print_json(data=result.body)
+    for label, value in _registry_result_lines(result):
+        table.add_row(label.title(), value)
+    border_style = "green" if 200 <= result.status_code < 300 else "red"
+    CONSOLE.print(Panel(table, title="Registry Result", border_style=border_style))
 
 
 def _render_relationship_alerts(context: PublishContext) -> None:
@@ -619,12 +693,25 @@ def _format_gate_failures(context: PublishContext) -> str:
     return "\n".join(lines)
 
 
+def _publish_payload_ready(context: PublishContext) -> bool:
+    """Return true only after delivery built the registry contract payload."""
+    payload = context.delivery_payload
+    return bool(
+        payload.slug
+        and payload.version
+        and payload.intent
+        and payload.metadata.get("name")
+        and payload.governance
+    )
+
+
 def _select(
     title: str,
     options: Sequence[tuple[str, T]],
     *,
     default: T | None = None,
     descriptions: dict[T, str] | None = None,
+    subtitle: str | None = None,
 ) -> T:
     if not options:
         raise ValueError("options cannot be empty")
@@ -637,7 +724,12 @@ def _select(
                 break
 
     if not sys.stdin.isatty() or not sys.stdout.isatty():
-        return _prompt_select(title, options, default_index=default_index)
+        return _prompt_select(
+            title,
+            options,
+            default_index=default_index,
+            subtitle=subtitle,
+        )
 
     try:
         from prompt_toolkit.application import Application
@@ -647,13 +739,20 @@ def _select(
         from prompt_toolkit.layout.controls import FormattedTextControl
         from prompt_toolkit.styles import Style
     except ModuleNotFoundError:
-        return _prompt_select(title, options, default_index=default_index)
+        return _prompt_select(
+            title,
+            options,
+            default_index=default_index,
+            subtitle=subtitle,
+        )
 
     state = {"index": default_index}
 
     def render_menu() -> list[tuple[str, str]]:
         fragments: list[tuple[str, str]] = [("class:title", f"{title}\n")]
-        fragments.append(("class:hint", "Use up/down and Enter.\n\n"))
+        if subtitle:
+            fragments.append(("class:subtitle", f"{subtitle}\n"))
+        fragments.append(("", "\n"))
         active_description = None
         if descriptions is not None:
             active_description = descriptions.get(options[state["index"]][1])
@@ -667,7 +766,7 @@ def _select(
             if is_active and active_description:
                 fragments.append(("class:detail", f" - {active_description}"))
             fragments.append(("", "\n"))
-        fragments.append(("class:hint", "\n[q] cancel\n\n"))
+        fragments.append(("class:hint", "\n[↑↓] move  [enter] confirm  [q] cancel\n\n"))
         return fragments
 
     control = FormattedTextControl(render_menu, focusable=True)
@@ -700,6 +799,7 @@ def _select(
         style=Style.from_dict(
             {
                 "title": "bold #ffffff",
+                "subtitle": "#d8d8d8",
                 "item": "#b8b8b8",
                 "active": "bold #ffffff",
                 "marker-active": "bold #8fa3ad",
@@ -716,8 +816,12 @@ def _prompt_select(
     options: Sequence[tuple[str, T]],
     *,
     default_index: int,
+    subtitle: str | None = None,
 ) -> T:
     CONSOLE.print(f"[bold]{title}[/bold]")
+    if subtitle:
+        CONSOLE.print(subtitle)
+        CONSOLE.print()
     for index, (label, _) in enumerate(options, start=1):
         CONSOLE.print(f"{index}. {label}")
     while True:
@@ -756,21 +860,15 @@ def _prompt_path(label: str) -> Path:
         CONSOLE.print("[yellow]Path does not exist.[/yellow]")
 
 
-def _prompt_semver(label: str, *, default: str) -> str:
-    while True:
-        raw = CONSOLE.input(f"{label} [{default}]: ").strip()
-        version = raw or default
-        if SEMVER_PATTERN.fullmatch(version):
-            return version
-        CONSOLE.print("[yellow]Version must be semantic versioning in the form X.Y.Z.[/yellow]")
-
-
 def _confirm(label: str, *, default: bool) -> bool:
-    suffix = "Y/n" if default else "y/N"
-    raw = CONSOLE.input(f"{label} [{suffix}]: ").strip().lower()
-    if not raw:
-        return default
-    return raw in {"y", "yes"}
+    return _select(
+        label,
+        [
+            ("Yes", True),
+            ("No", False),
+        ],
+        default=default,
+    )
 
 
 @contextmanager

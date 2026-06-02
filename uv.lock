@@ -3324,11 +3324,14 @@ wheels = [
 [[package]]
 name = "publisher"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
+    { name = "garak" },
     { name = "prompt-toolkit" },
     { name = "pyyaml" },
     { name = "rich" },
+    { name = "upskill", version = "0.1.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13.5'" },
+    { name = "upskill", version = "0.2.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13.5'" },
     { name = "zstandard" },
 ]
 
@@ -3336,23 +3339,18 @@ dependencies = [
 dev = [
     { name = "pytest" },
 ]
-evaluators = [
-    { name = "garak" },
-    { name = "upskill", version = "0.1.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13.5'" },
-    { name = "upskill", version = "0.2.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13.5'" },
-]
 
 [package.metadata]
 requires-dist = [
-    { name = "garak", marker = "extra == 'evaluators'" },
+    { name = "garak" },
     { name = "prompt-toolkit", specifier = ">=3.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "rich", specifier = ">=13.0" },
-    { name = "upskill", marker = "extra == 'evaluators'" },
+    { name = "upskill" },
     { name = "zstandard", specifier = ">=0.23,<0.24" },
 ]
-provides-extras = ["dev", "evaluators"]
+provides-extras = ["dev"]
 
 [[package]]
 name = "py-key-value-aio"

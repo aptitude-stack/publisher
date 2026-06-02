@@ -24,6 +24,8 @@ from publisher.stages.validation import ValidationStage
 class PublisherPipeline:
     """Runs the publisher stages in the expected order."""
 
+    _NON_TERMINAL_FAILED_GATES = {"security"}
+
     def __init__(self) -> None:
         self._stages = (
             DiscoveryStage(),
@@ -83,6 +85,10 @@ class PublisherPipeline:
         for stage in self._stages:
             stage.run(context)
             gate = self._gates.get(stage.name)
-            if gate and not gate.verify(context):
+            if (
+                gate
+                and not gate.verify(context)
+                and stage.name not in self._NON_TERMINAL_FAILED_GATES
+            ):
                 break
         return context

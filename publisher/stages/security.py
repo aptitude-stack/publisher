@@ -40,8 +40,15 @@ class SecurityStage(PublisherStage):
                 findings=garak_result.findings,
                 authoritative_score=garak_result.score,
             )
+        elif garak_result.status == "disabled":
+            context.security.notes.append(
+                f"NVIDIA garak security scan was disabled: {garak_result.reason or 'disabled by configuration'}."
+            )
+            self._finalize_disabled_garak_result(context)
         elif garak_result.reason:
-            context.security.notes.append(f"NVIDIA garak security scan did not produce a score: {garak_result.reason}.")
+            context.security.notes.append(
+                f"NVIDIA garak evaluator {garak_result.status}: {garak_result.reason}."
+            )
             self._finalize_unscored_garak_result(context, garak_result.reason)
         else:
             context.security.notes.append("NVIDIA garak security scan did not produce a score.")
@@ -596,22 +603,29 @@ class SecurityStage(PublisherStage):
         context: PublishContext,
         reason: str,
     ) -> None:
-        """Record an unscored garak result as blocking for a garak-only policy."""
+        """Record evaluator unavailability as blocking without creating findings."""
         context.security.scanned = False
         context.security.score = None
         context.security.decision = "block"
         for severity in context.security.severity_counts:
             context.security.severity_counts[severity] = 0
-        context.security.severity_counts["critical"] = 1
-        context.security.findings = [
-            self._finding(
-                check="garak:required_scan",
-                severity="critical",
-                field_name="garak",
-                reason="NVIDIA garak is required as the authoritative security source.",
-                evidence=reason,
-            )
-        ]
+        context.security.findings = []
+        context.security.notes.append(
+            f"NVIDIA garak is required as the authoritative security source: {reason}."
+        )
+
+    def _finalize_disabled_garak_result(
+        self,
+        context: PublishContext,
+    ) -> None:
+        """Allow publishing only when garak was explicitly disabled."""
+        context.security.scanned = True
+        context.security.score = 1.0
+        context.security.decision = "allow"
+        context.security.checks_run = []
+        for severity in context.security.severity_counts:
+            context.security.severity_counts[severity] = 0
+        context.security.findings = []
 
     def _write_security_artifact(self, context: PublishContext) -> str:
         """Persist the phase 4 security results as a JSON artifact."""

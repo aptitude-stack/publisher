@@ -3,9 +3,11 @@ name = "publisher"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
+    "garak",
     "prompt-toolkit>=3.0",
     "PyYAML>=6.0",
     "rich>=13.0",
+    "upskill",
     "zstandard>=0.23,<0.24",
 ]
 
@@ -13,13 +15,15 @@ dependencies = [
 dev = [
     "pytest>=8.0",
 ]
-evaluators = [
-    "garak",
-    "upskill",
-]
-
 [project.scripts]
 aptitude-publisher = "publisher.app.cli:main"
+
+[build-system]
+requires = ["setuptools>=81.0.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["publisher*"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

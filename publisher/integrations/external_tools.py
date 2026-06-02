@@ -46,11 +46,13 @@ def run_command(
     *,
     cwd: Path,
     timeout_seconds: int,
+    env: Mapping[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Run an external command and capture text output."""
     return subprocess.run(
         command,
         cwd=str(cwd),
+        env=dict(env) if env is not None else None,
         text=True,
         capture_output=True,
         timeout=timeout_seconds,

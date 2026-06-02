@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import sys
 from pathlib import Path
@@ -118,14 +117,14 @@ def _add_shared_arguments(parser: argparse.ArgumentParser) -> None:
 def _run_inspect(args: argparse.Namespace) -> int:
     context = _run_pipeline(args)
     _print_pipeline_report(context)
-    return 0 if context.ranking.publish_decision != "block" else 1
+    return 0 if _publish_payload_ready(context) and context.ranking.publish_decision != "block" else 1
 
 
 def _run_publish(args: argparse.Namespace) -> int:
     context = _run_pipeline(args)
     _print_pipeline_report(context)
-    if context.ranking.publish_decision == "block":
-        print("\nPublish blocked.")
+    if not _publish_payload_ready(context) or context.ranking.publish_decision == "block":
+        print("\nPublish blocked before registry upload.")
         _print_gate_failures(context)
         return 1
 
@@ -169,10 +168,8 @@ def _run_publish(args: argparse.Namespace) -> int:
     print("\n" + _separator())
     print("Registry Result")
     print(_separator())
-    print(f"status         {result.status_code}")
-    if result.request_id:
-        print(f"request id     {result.request_id}")
-    print(json.dumps(result.body, indent=2, ensure_ascii=True))
+    for label, value in _registry_result_lines(result):
+        print(f"{label:<14} {value}")
     return 0 if 200 <= result.status_code < 300 else 1
 
 
@@ -207,9 +204,13 @@ def _print_pipeline_report(context) -> None:
     print("\n" + _separator())
     print("Evaluation Summary")
     print(_separator())
+    garak_status = context.metadata.extra.get("garak_security", {})
+    upskill_status = context.metadata.extra.get("upskill_evaluation", {})
     print(f"validation      {'passed' if context.validation.passed else 'failed'}")
+    print(f"garak status    {garak_status.get('status') if isinstance(garak_status, dict) else None}")
     print(f"security score  {context.security.score}")
     print(f"security gate   {context.security.decision}")
+    print(f"upskill status  {upskill_status.get('status') if isinstance(upskill_status, dict) else None}")
     print(f"performance     {context.performance_exam.score}")
     print(f"lift            {context.performance_exam.skill_lift}")
     print(f"token delta     {context.performance_exam.token_delta}")
@@ -261,6 +262,62 @@ def _print_gate_failures(context) -> None:
     print("Gate failure reasons:")
     for gate in failed_gates:
         print(f"- {gate.gate_name}: {gate.explanation or 'failed'}")
+
+
+def _registry_result_lines(result) -> list[tuple[str, str]]:
+    """Build concise registry response lines without dumping response JSON."""
+    lines = [("status", str(result.status_code))]
+    if result.request_id:
+        lines.append(("request id", result.request_id))
+
+    body = result.body if isinstance(result.body, dict) else {}
+    error = body.get("error")
+    if isinstance(error, dict):
+        code = error.get("code")
+        if code is not None:
+            lines.append(("error code", str(code)))
+        message = error.get("message")
+        if message is not None:
+            lines.append(("message", str(message)))
+        lines.extend(_registry_error_detail_lines(error))
+        return lines
+
+    message = body.get("message")
+    if message is not None:
+        lines.append(("message", str(message)))
+    return lines
+
+
+def _registry_error_detail_lines(error: dict[object, object]) -> list[tuple[str, str]]:
+    details = error.get("details")
+    if not isinstance(details, dict):
+        return []
+    errors = details.get("errors")
+    if not isinstance(errors, list):
+        return []
+
+    lines: list[tuple[str, str]] = []
+    for index, item in enumerate(errors, start=1):
+        if not isinstance(item, dict):
+            continue
+        loc = item.get("loc")
+        location = ".".join(str(part) for part in loc) if isinstance(loc, list) else ""
+        message = str(item.get("msg") or item.get("message") or item)
+        value = f"{location}: {message}" if location else message
+        lines.append((f"error {index}", value))
+    return lines
+
+
+def _publish_payload_ready(context) -> bool:
+    """Return true only after delivery built the registry contract payload."""
+    payload = context.delivery_payload
+    return bool(
+        payload.slug
+        and payload.version
+        and payload.intent
+        and payload.metadata.get("name")
+        and payload.governance
+    )
 
 
 def _print_relationship_alerts(

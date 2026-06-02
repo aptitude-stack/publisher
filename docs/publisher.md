@@ -61,11 +61,13 @@ export UPSKILL_MODELS="haiku,sonnet"
 or through an explicit command template:
 
 ```bash
-export PUBLISHER_UPSKILL_COMMAND='upskill eval {skill_path} --runs-dir {runs_dir}'
+export PUBLISHER_UPSKILL_COMMAND='upskill eval {skill_path}'
 ```
 
 Both templates support `{skill_path}`, `{skill_file}`, `{artifact_dir}`, and
-for upskill `{runs_dir}`. If Upskill is unavailable or unconfigured, the
-performance exam records no score because performance has no local fallback
-source. If Garak is unavailable or unconfigured, the security stage blocks the
-publish flow because security has no local fallback source.
+for upskill `{runs_dir}` when the selected command supports it. If Upskill is
+disabled, unavailable, or failing, the performance exam records that evaluator
+status and produces no score because performance has no local fallback source.
+If Garak is disabled, unavailable, or failing, the security stage records that
+evaluator status. Unavailable or failing Garak blocks the publish flow because
+security has no local fallback source.
