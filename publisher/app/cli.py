@@ -10,7 +10,11 @@ from pathlib import Path
 
 from publisher.artifacts.bundle import build_bundle_bytes
 from publisher.app.pipeline import PublisherPipeline
-from publisher.registry.client import publish_to_registry
+from publisher.registry.client import (
+    RelationshipCheckIssue,
+    check_relationship_references,
+    publish_to_registry,
+)
 
 
 _DEFAULT_REGISTRY_URL = "http://127.0.0.1:8000"
@@ -124,6 +128,12 @@ def _run_publish(args: argparse.Namespace) -> int:
         print("\nPublish blocked.")
         _print_gate_failures(context)
         return 1
+
+    _print_relationship_alerts(
+        registry_url=args.registry_url,
+        token=_relationship_check_token(args.token),
+        relationships=context.delivery_payload.relationships,
+    )
 
     try:
         bundle_bytes = build_bundle_bytes(context)
@@ -253,6 +263,53 @@ def _print_gate_failures(context) -> None:
         print(f"- {gate.gate_name}: {gate.explanation or 'failed'}")
 
 
+def _print_relationship_alerts(
+    *,
+    registry_url: str,
+    token: str | None,
+    relationships: dict[str, object],
+) -> None:
+    if not _has_relationships(relationships):
+        return
+
+    print("\n" + _separator())
+    print("Relationship Alerts")
+    print(_separator())
+    if not token:
+        print(
+            "- skipped relationship existence check: set APTITUDE_READ_TOKEN, "
+            "REGISTRY_READ_TOKEN, or a publish token with read scope."
+        )
+        return
+
+    issues = check_relationship_references(
+        registry_url=registry_url,
+        token=token,
+        relationships=relationships,
+    )
+    if not issues:
+        print("- all referenced relationship targets were found.")
+        return
+
+    for line in _relationship_alert_lines(issues):
+        print(line)
+
+
+def _relationship_alert_lines(issues: list[RelationshipCheckIssue]) -> list[str]:
+    lines: list[str] = []
+    for issue in issues:
+        coordinate = issue.slug if issue.version is None else f"{issue.slug}@{issue.version}"
+        lines.append(f"- {issue.kind} {issue.family} target {coordinate}: {issue.message}")
+    return lines
+
+
+def _has_relationships(relationships: dict[str, object]) -> bool:
+    for value in relationships.values():
+        if isinstance(value, list) and value:
+            return True
+    return False
+
+
 def _separator() -> str:
     return "-" * 72
 
@@ -335,6 +392,15 @@ def _default_publish_token() -> str | None:
         os.environ.get("APTITUDE_PUBLISH_TOKEN")
         or os.environ.get("APTITUDE_INTEGRATION_PUBLISH_TOKEN")
         or os.environ.get("PUBLISH_TOKEN")
+    )
+
+
+def _relationship_check_token(publish_token: str | None) -> str | None:
+    return (
+        os.environ.get("APTITUDE_READ_TOKEN")
+        or os.environ.get("APTITUDE_REGISTRY_READ_TOKEN")
+        or os.environ.get("REGISTRY_READ_TOKEN")
+        or publish_token
     )
 
 

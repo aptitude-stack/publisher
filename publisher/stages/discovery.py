@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import json
-import re
 import subprocess
 from pathlib import Path
 from typing import Any
 
 from publisher.domain.models import PublishContext
+from publisher.frontmatter import parse_skill_markdown
 from publisher.stages.base import PublisherStage
 
 
@@ -118,7 +118,7 @@ class DiscoveryStage(PublisherStage):
         context.source.raw_content = raw_content
         context.source.file_name = skill_file.name
 
-        frontmatter, body = self._parse_skill_markdown(raw_content)
+        frontmatter, body = parse_skill_markdown(raw_content)
         parsed_skill: dict[str, Any] = {
             "skill_root": str(skill_root),
             "skill_file": str(skill_file),
@@ -138,69 +138,6 @@ class DiscoveryStage(PublisherStage):
         }
         context.source.parsed_content = parsed_skill
         return parsed_skill
-
-    def _parse_skill_markdown(self, content: str) -> tuple[dict[str, Any], str]:
-        """Parse YAML frontmatter and markdown body from SKILL.md."""
-        if not content.startswith("---\n"):
-            raise ValueError("SKILL.md must start with YAML frontmatter.")
-
-        closing_index = content.find("\n---\n", 4)
-        if closing_index == -1:
-            raise ValueError("SKILL.md frontmatter must end with a closing --- delimiter.")
-
-        frontmatter_text = content[4:closing_index]
-        body = content[closing_index + 5 :]
-        return self._parse_simple_yaml(frontmatter_text), body
-
-    def _parse_simple_yaml(self, frontmatter_text: str) -> dict[str, Any]:
-        """Parse the frontmatter subset used by the current publisher."""
-        result: dict[str, Any] = {}
-        current_nested_key: str | None = None
-        for raw_line in frontmatter_text.splitlines():
-            if not raw_line.strip() or raw_line.lstrip().startswith("#"):
-                continue
-            if raw_line.startswith("  ") and current_nested_key:
-                stripped = raw_line.strip()
-                if ":" not in stripped:
-                    continue
-                nested_key, nested_value = stripped.split(":", 1)
-                nested_map = result.setdefault(current_nested_key, {})
-                if isinstance(nested_map, dict):
-                    nested_map[nested_key.strip()] = self._coerce_scalar(nested_value.strip())
-                continue
-
-            current_nested_key = None
-            if ":" not in raw_line:
-                continue
-            key, value = raw_line.split(":", 1)
-            key = key.strip()
-            value = value.strip()
-            if not value:
-                result[key] = {}
-                current_nested_key = key
-                continue
-            result[key] = self._coerce_scalar(value)
-        return result
-
-    def _coerce_scalar(self, value: str) -> Any:
-        """Convert simple YAML scalar strings into Python values when obvious."""
-        if value.startswith("[") and value.endswith("]"):
-            inner = value[1:-1].strip()
-            if not inner:
-                return []
-            return [part.strip().strip("'\"") for part in inner.split(",") if part.strip()]
-        if value.startswith("{") and value.endswith("}"):
-            try:
-                return json.loads(value)
-            except json.JSONDecodeError:
-                return value
-        if re.fullmatch(r"-?\d+", value):
-            return int(value)
-        if re.fullmatch(r"-?\d+\.\d+", value):
-            return float(value)
-        if value.lower() in {"true", "false"}:
-            return value.lower() == "true"
-        return value.strip("'\"")
 
     def _write_inventory_artifact(self, context: PublishContext) -> str:
         """Persist the discovered skill package inventory."""

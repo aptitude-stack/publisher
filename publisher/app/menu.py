@@ -22,10 +22,12 @@ from publisher.app.cli import (
     _default_publish_token,
     _default_registry_url,
     _load_local_env_defaults,
+    _relationship_alert_lines,
+    _relationship_check_token,
 )
 from publisher.app.pipeline import PublisherPipeline
 from publisher.domain.models import PublishContext
-from publisher.registry.client import publish_to_registry
+from publisher.registry.client import check_relationship_references, publish_to_registry
 
 try:
     import termios
@@ -288,6 +290,7 @@ def _execute_plan(plan: PublishPlan) -> int:
         return 1
 
     _render_bundle(context, bundle_bytes)
+    _render_relationship_alerts(context)
     if not _confirm("Upload this skill to the registry?", default=False):
         CONSOLE.print("[grey70]Upload cancelled.[/grey70]")
         return 0
@@ -519,6 +522,54 @@ def _render_registry_result(result) -> None:
         table.add_row("Request id", result.request_id)
     CONSOLE.print(Panel(table, title="Registry Result", border_style="grey35"))
     CONSOLE.print_json(data=result.body)
+
+
+def _render_relationship_alerts(context: PublishContext) -> None:
+    relationships = context.delivery_payload.relationships
+    if not _has_relationships(relationships):
+        return
+
+    token = _relationship_check_token(_default_publish_token())
+    if not token:
+        CONSOLE.print(
+            Panel(
+                "Skipped relationship existence check. Set APTITUDE_READ_TOKEN, "
+                "REGISTRY_READ_TOKEN, or a publish token with read scope.",
+                title="Relationship Alerts",
+                border_style="yellow",
+            )
+        )
+        return
+
+    issues = check_relationship_references(
+        registry_url=_default_registry_url(),
+        token=token,
+        relationships=relationships,
+    )
+    if not issues:
+        CONSOLE.print(
+            Panel(
+                "All referenced relationship targets were found.",
+                title="Relationship Alerts",
+                border_style="grey35",
+            )
+        )
+        return
+
+    CONSOLE.print(
+        Panel(
+            "\n".join(_relationship_alert_lines(issues)),
+            title="Relationship Alerts",
+            border_style="yellow",
+        )
+    )
+
+
+def _has_relationships(relationships: dict[str, object]) -> bool:
+    for value in relationships.values():
+        if isinstance(value, list) and value:
+            return True
+    return False
 
 
 @contextmanager

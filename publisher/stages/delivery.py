@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from publisher.domain.models import PublishContext
+from publisher.relationships import normalize_relationships
 from publisher.stages.base import PublisherStage
 
 
@@ -70,9 +71,8 @@ class DeliveryStage(PublisherStage):
             "policy_pack_slug": context.source.policy_pack_slug,
             "provenance": provenance,
         }
-        context.delivery_payload.relationships = {
-            "depends_on": [],
-            "extends": [],
-            "conflicts_with": [],
-            "overlaps_with": [],
-        }
+        frontmatter = context.source.parsed_content.get("frontmatter", {})
+        relationships = (
+            frontmatter.get("relationships") if isinstance(frontmatter, dict) else None
+        )
+        context.delivery_payload.relationships = normalize_relationships(relationships)

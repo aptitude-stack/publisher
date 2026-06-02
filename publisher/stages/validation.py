@@ -8,7 +8,9 @@ from pathlib import Path
 from typing import Any
 
 from publisher.domain.models import PublishContext
+from publisher.frontmatter import parse_skill_markdown
 from publisher.integrations.llm_validation import run_llm_skill_validation
+from publisher.relationships import normalize_relationships
 from publisher.stages.base import PublisherStage
 
 
@@ -78,6 +80,7 @@ class ValidationStage(PublisherStage):
             "frontmatter_description_trigger_guidance",
             "frontmatter_no_xml_angle_brackets",
             "compatibility_length_if_present",
+            "relationships_frontmatter_shape",
             "body_present",
             "body_instructions_heading",
             "body_examples_presence",
@@ -135,53 +138,13 @@ class ValidationStage(PublisherStage):
     ) -> tuple[dict[str, Any], str]:
         """Parse YAML frontmatter and markdown body from SKILL.md."""
         content = skill_file.read_text(encoding="utf-8")
-        if not content.startswith("---\n"):
+        try:
+            return parse_skill_markdown(content)
+        except ValueError as exc:
             context.validation.errors.append(
-                "SKILL.md must start with YAML frontmatter delimited by ---"
+                str(exc)
             )
             return {}, content
-
-        closing_index = content.find("\n---\n", 4)
-        if closing_index == -1:
-            context.validation.errors.append(
-                "SKILL.md frontmatter must end with a closing --- delimiter."
-            )
-            return {}, content
-
-        frontmatter_text = content[4:closing_index]
-        body = content[closing_index + 5 :]
-        frontmatter = self._parse_simple_yaml(frontmatter_text)
-        return frontmatter, body
-
-    def _parse_simple_yaml(self, frontmatter_text: str) -> dict[str, Any]:
-        """Parse a limited subset of YAML sufficient for the expected Anthropic frontmatter."""
-        result: dict[str, Any] = {}
-        current_nested_key: str | None = None
-        for raw_line in frontmatter_text.splitlines():
-            if not raw_line.strip() or raw_line.lstrip().startswith("#"):
-                continue
-            if raw_line.startswith("  ") and current_nested_key:
-                stripped = raw_line.strip()
-                if ":" not in stripped:
-                    continue
-                nested_key, nested_value = stripped.split(":", 1)
-                nested_map = result.setdefault(current_nested_key, {})
-                if isinstance(nested_map, dict):
-                    nested_map[nested_key.strip()] = nested_value.strip()
-                continue
-
-            current_nested_key = None
-            if ":" not in raw_line:
-                continue
-            key, value = raw_line.split(":", 1)
-            key = key.strip()
-            value = value.strip()
-            if not value:
-                result[key] = {}
-                current_nested_key = key
-                continue
-            result[key] = value
-        return result
 
     def _validate_frontmatter(
         self,
@@ -246,6 +209,11 @@ class ValidationStage(PublisherStage):
                 context.validation.errors.append(
                     "Frontmatter compatibility must be a string between 1 and 500 characters when provided."
                 )
+
+        try:
+            normalize_relationships(frontmatter.get("relationships"))
+        except ValueError as exc:
+            context.validation.errors.append(f"Relationships frontmatter is invalid: {exc}")
 
     def _has_trigger_guidance(self, description: str) -> bool:
         """Heuristic check that the description includes use-when guidance."""
