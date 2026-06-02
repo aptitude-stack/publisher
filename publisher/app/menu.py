@@ -452,7 +452,51 @@ def _render_pipeline_report(context: PublishContext) -> None:
                 str(finding.get("evidence", "")),
             )
         panels.append(Panel(findings, title="Security Findings", border_style="red"))
+    if context.performance_exam.score is not None or context.performance_exam.notes:
+        upskill = Table(
+            show_header=True,
+            header_style="grey70",
+            border_style="grey35",
+            box=box.ROUNDED,
+            expand=True,
+        )
+        upskill.add_column("Signal", style="grey70")
+        upskill.add_column("Value", style="white")
+        upskill.add_row("Status", "passed" if context.performance_exam.passed else "not passed")
+        upskill.add_row("Score", str(context.performance_exam.score))
+        upskill.add_row("Models", ", ".join(context.performance_exam.models_tested) or "none")
+        upskill.add_row("Test cases", str(context.performance_exam.test_case_count))
+        upskill.add_row("Baseline success", str(context.performance_exam.baseline_success_rate))
+        upskill.add_row("Skilled success", str(context.performance_exam.skilled_success_rate))
+        upskill.add_row("Skill lift", str(context.performance_exam.skill_lift))
+        upskill.add_row("Baseline avg tokens", str(context.performance_exam.baseline_avg_tokens))
+        upskill.add_row("Skilled avg tokens", str(context.performance_exam.skilled_avg_tokens))
+        upskill.add_row("Token delta", str(context.performance_exam.token_delta))
+        upskill.add_row("Efficiency", str(context.performance_exam.efficiency_label))
+        upskill.add_row("Token estimate source", str(context.metadata.extra.get("token_estimate_source")))
+        explanation = _upskill_explanation(context)
+        if explanation:
+            upskill.add_row("Explanation", explanation)
+        if context.performance_exam.notes:
+            upskill.add_row("Notes", "\n".join(context.performance_exam.notes))
+        panels.append(Panel(upskill, title="Upskill Findings", border_style="yellow"))
     CONSOLE.print(Group(*panels))
+
+
+def _upskill_explanation(context: PublishContext) -> str:
+    exam = context.performance_exam
+    if exam.score is None:
+        return "Upskill did not return a scored performance result."
+    if exam.skill_lift is not None and exam.skill_lift <= 0:
+        return (
+            "Upskill scored the run, but the model did not improve with the skill "
+            "because baseline and skilled success were the same."
+        )
+    if exam.token_delta is not None and exam.token_delta > 0:
+        return "Upskill scored the run, but the skill used more tokens than the baseline."
+    if exam.passed:
+        return "Upskill showed measurable performance evidence for the skill."
+    return "Upskill scored the run, but its pass criteria were not met."
 
 
 def _render_bundle(context: PublishContext, bundle_bytes: bytes) -> None:
@@ -486,6 +530,7 @@ def _scan_profile_environment(profile: ScanProfile):
             "GARAK_GENERATIONS": "1",
             "GARAK_PARALLEL_ATTEMPTS": "4",
             "GARAK_CONFIDENCE_INTERVAL_METHOD": "none",
+            "GARAK_SOFT_PROBE_PROMPT_CAP": "8",
             "PUBLISHER_GARAK_TIMEOUT_SECONDS": "90",
             "UPSKILL_USE_DEFAULT_TESTS": "true",
             "PUBLISHER_UPSKILL_TIMEOUT_SECONDS": "120",
@@ -496,6 +541,7 @@ def _scan_profile_environment(profile: ScanProfile):
             "GARAK_GENERATIONS": "5",
             "GARAK_PARALLEL_ATTEMPTS": "1",
             "GARAK_CONFIDENCE_INTERVAL_METHOD": "bootstrap",
+            "GARAK_SOFT_PROBE_PROMPT_CAP": "256",
             "PUBLISHER_GARAK_TIMEOUT_SECONDS": "600",
             "UPSKILL_USE_DEFAULT_TESTS": "false",
             "PUBLISHER_UPSKILL_TIMEOUT_SECONDS": "600",

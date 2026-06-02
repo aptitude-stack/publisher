@@ -7,6 +7,7 @@ import os
 import re
 import subprocess
 import asyncio
+import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -50,6 +51,7 @@ def run_upskill_evaluation(*, skill_root: Path, artifacts_dir: Path) -> UpskillE
         return UpskillEvaluation(status="disabled", reason="PUBLISHER_UPSKILL_ENABLED is false")
 
     upskill_dir = artifacts_dir / "upskill"
+    _reset_artifact_dir(upskill_dir)
     upskill_dir.mkdir(parents=True, exist_ok=True)
 
     direct_result = _run_direct_openai_compatible_eval(skill_root=skill_root)
@@ -129,6 +131,17 @@ def _looks_like_empty_provider_result(parsed: dict[str, Any]) -> bool:
         and baseline_success == 0.0
         and skilled_success == 0.0
     )
+
+
+def _reset_artifact_dir(path: Path) -> None:
+    """Clear stale Upskill files so each result belongs to the current run."""
+    if not path.exists():
+        return
+    for child in path.iterdir():
+        if child.is_dir():
+            shutil.rmtree(child, ignore_errors=True)
+        else:
+            child.unlink(missing_ok=True)
 
 
 def _run_direct_openai_compatible_eval(*, skill_root: Path) -> UpskillEvaluation | None:

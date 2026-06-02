@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -41,6 +42,7 @@ def run_garak_security_scan(*, skill_root: Path, artifacts_dir: Path) -> GarakSe
         return GarakSecurityResult(status="disabled", reason="PUBLISHER_GARAK_ENABLED is false")
 
     garak_dir = artifacts_dir / "garak"
+    _reset_artifact_dir(garak_dir)
     garak_dir.mkdir(parents=True, exist_ok=True)
 
     command = _build_command(skill_root=skill_root, artifact_dir=garak_dir)
@@ -122,10 +124,45 @@ def _build_command(*, skill_root: Path, artifact_dir: Path) -> list[str] | None:
         "--report_prefix",
         str(artifact_dir / "garak"),
     ]
+    config_path = _write_runtime_config(artifact_dir)
+    if config_path is not None:
+        command.extend(["--config", str(config_path)])
     detector = os.environ.get("GARAK_DETECTORS")
     if detector:
         command.extend(["--detectors", detector])
     return command
+
+
+def _write_runtime_config(artifact_dir: Path) -> Path | None:
+    """Write a small Garak config override when fast mode needs a prompt cap."""
+    prompt_cap = os.environ.get("GARAK_SOFT_PROBE_PROMPT_CAP")
+    if not prompt_cap:
+        return None
+    try:
+        cap = int(prompt_cap)
+    except ValueError:
+        return None
+    if cap < 1:
+        return None
+
+    config_path = artifact_dir / "garak.runtime.yaml"
+    config_path.write_text(
+        "run:\n"
+        f"  soft_probe_prompt_cap: {cap}\n",
+        encoding="utf-8",
+    )
+    return config_path
+
+
+def _reset_artifact_dir(path: Path) -> None:
+    """Clear stale Garak files so each report belongs to the current run."""
+    if not path.exists():
+        return
+    for child in path.iterdir():
+        if child.is_dir():
+            shutil.rmtree(child, ignore_errors=True)
+        else:
+            child.unlink(missing_ok=True)
 
 
 def _load_findings(artifact_dir: Path) -> list[dict[str, Any]]:
