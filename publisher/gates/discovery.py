@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from publisher.gates.base import PublisherGate
+from publisher.gates.base import PublisherGate, explain_gate_result
 from publisher.domain.models import PublishContext
 
 
@@ -58,9 +58,16 @@ class DiscoveryGate(PublisherGate):
             )
 
         passed = not blocking_issues
+        explanation = explain_gate_result(
+            passed=passed,
+            passed_message="Discovery passed: the skill root, SKILL.md, parsed content, and inventory artifact are available.",
+            blocking_issues=blocking_issues,
+            warnings=warnings,
+        )
         context.add_gate_result(
             gate_name=self.name,
             passed=passed,
+            explanation=explanation,
             blocking_issues=blocking_issues,
             warnings=warnings,
             data={
@@ -80,7 +87,8 @@ class DiscoveryGate(PublisherGate):
                 "warnings": warnings,
             },
             messages=[
-                "Discovery gate verified whether the skill package is ready for Identity."
+                "Discovery gate verified whether the skill package is ready for Identity.",
+                explanation,
             ],
         )
         return passed

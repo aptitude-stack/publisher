@@ -29,6 +29,10 @@ def main(argv: list[str] | None = None) -> int:
         return _run_inspect(args)
     if args.command == "publish":
         return _run_publish(args)
+    if args.command == "menu":
+        from publisher.app.menu import run_menu
+
+        return run_menu()
 
     parser.error(f"Unknown command: {args.command}")
     return 2
@@ -73,6 +77,11 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="run the full local flow and stop before the API upload",
     )
+
+    subparsers.add_parser(
+        "menu",
+        help="open an interactive menu for inspect, dry-run, or publish",
+    )
     return parser
 
 
@@ -112,7 +121,8 @@ def _run_publish(args: argparse.Namespace) -> int:
     context = _run_pipeline(args)
     _print_pipeline_report(context)
     if context.ranking.publish_decision == "block":
-        print("\nPublish blocked by security or validation gates.")
+        print("\nPublish blocked.")
+        _print_gate_failures(context)
         return 1
 
     try:
@@ -202,6 +212,20 @@ def _print_pipeline_report(context) -> None:
     for snapshot in context.stage_history:
         print(f"{snapshot.stage_name:<18} {snapshot.status}")
 
+    if context.gate_history:
+        print("\n" + _separator())
+        print("Gate Results")
+        print(_separator())
+        for gate in context.gate_history:
+            status = "passed" if gate.passed else "failed"
+            print(f"{gate.gate_name:<18} {status}")
+            if gate.explanation:
+                print(f"  why           {gate.explanation}")
+            for issue in gate.blocking_issues:
+                print(f"  blocking      {issue}")
+            for warning in gate.warnings:
+                print(f"  warning       {warning}")
+
     if context.security.findings:
         print("\n" + _separator())
         print("Security Findings")
@@ -218,6 +242,15 @@ def _print_pipeline_report(context) -> None:
         print(_separator())
         for error in context.validation.errors:
             print(f"- {error}")
+
+
+def _print_gate_failures(context) -> None:
+    failed_gates = [gate for gate in context.gate_history if not gate.passed]
+    if not failed_gates:
+        return
+    print("Gate failure reasons:")
+    for gate in failed_gates:
+        print(f"- {gate.gate_name}: {gate.explanation or 'failed'}")
 
 
 def _separator() -> str:

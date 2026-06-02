@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from publisher.gates.base import PublisherGate
+from publisher.gates.base import PublisherGate, explain_gate_result
 from publisher.domain.models import PublishContext
 
 
@@ -46,9 +46,16 @@ class MetadataGate(PublisherGate):
             blocking_issues.append("Metadata security_score must be between 0.0 and 1.0.")
 
         passed = not blocking_issues
+        explanation = explain_gate_result(
+            passed=passed,
+            passed_message="Metadata passed: required publish metadata is present and usable.",
+            blocking_issues=blocking_issues,
+            warnings=warnings,
+        )
         context.add_gate_result(
             gate_name=self.name,
             passed=passed,
+            explanation=explanation,
             blocking_issues=blocking_issues,
             warnings=warnings,
             data={
@@ -70,7 +77,8 @@ class MetadataGate(PublisherGate):
                 "warnings": warnings,
             },
             messages=[
-                "Metadata gate verified whether the publish metadata is ready for Security."
+                "Metadata gate verified whether the publish metadata is ready for Security.",
+                explanation,
             ],
         )
         return passed

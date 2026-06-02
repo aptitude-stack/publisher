@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from publisher.gates.base import PublisherGate
+from publisher.gates.base import PublisherGate, explain_gate_result
 from publisher.domain.models import PublishContext
 
 
@@ -40,9 +40,16 @@ class SecurityGate(PublisherGate):
             blocking_issues.append("Security scan blocked the skill from being published.")
 
         passed = not blocking_issues
+        explanation = explain_gate_result(
+            passed=passed,
+            passed_message="Security passed: the scan completed, produced a valid score, and did not block publishing.",
+            blocking_issues=blocking_issues,
+            warnings=warnings,
+        )
         context.add_gate_result(
             gate_name=self.name,
             passed=passed,
+            explanation=explanation,
             blocking_issues=blocking_issues,
             warnings=warnings,
             data={
@@ -63,7 +70,8 @@ class SecurityGate(PublisherGate):
                 "warnings": warnings,
             },
             messages=[
-                "Security gate verified whether the security result allows the pipeline to continue."
+                "Security gate verified whether the security result allows the pipeline to continue.",
+                explanation,
             ],
         )
         return passed

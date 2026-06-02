@@ -177,6 +177,7 @@ class GateResult:
 
     gate_name: str
     passed: bool
+    explanation: str | None = None
     blocking_issues: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     data: dict[str, Any] = field(default_factory=dict)
@@ -223,6 +224,7 @@ class PublishContext:
         *,
         gate_name: str,
         passed: bool,
+        explanation: str | None = None,
         blocking_issues: list[str] | None = None,
         warnings: list[str] | None = None,
         data: dict[str, Any] | None = None,
@@ -232,6 +234,7 @@ class PublishContext:
             GateResult(
                 gate_name=gate_name,
                 passed=passed,
+                explanation=explanation,
                 blocking_issues=blocking_issues or [],
                 warnings=warnings or [],
                 data=data or {},

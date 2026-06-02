@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from publisher.gates.base import PublisherGate
+from publisher.gates.base import PublisherGate, explain_gate_result
 from publisher.domain.models import PublishContext
 
 
@@ -37,9 +37,16 @@ class ValidationGate(PublisherGate):
             blocking_issues.append("Validation did not pass, but no blocking errors were recorded.")
 
         passed = not blocking_issues
+        explanation = explain_gate_result(
+            passed=passed,
+            passed_message="Validation passed: the SKILL.md contract checks completed without blocking errors.",
+            blocking_issues=blocking_issues,
+            warnings=warnings,
+        )
         context.add_gate_result(
             gate_name=self.name,
             passed=passed,
+            explanation=explanation,
             blocking_issues=blocking_issues,
             warnings=warnings,
             data={
@@ -60,7 +67,8 @@ class ValidationGate(PublisherGate):
                 "warnings": warnings,
             },
             messages=[
-                "Validation gate verified whether the skill passed structural and Anthropic guideline checks."
+                "Validation gate verified whether the skill passed structural and Anthropic guideline checks.",
+                explanation,
             ],
         )
         return passed

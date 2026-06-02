@@ -18,6 +18,8 @@ from publisher.integrations.external_tools import (
 
 
 _DEFAULT_TIMEOUT_SECONDS = 180
+_DEFAULT_GENERATIONS = "1"
+_DEFAULT_PARALLEL_ATTEMPTS = "4"
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,6 +113,12 @@ def _build_command(*, skill_root: Path, artifact_dir: Path) -> list[str] | None:
         target_name,
         "--probes",
         probes,
+        "--generations",
+        os.environ.get("GARAK_GENERATIONS", _DEFAULT_GENERATIONS),
+        "--parallel_attempts",
+        os.environ.get("GARAK_PARALLEL_ATTEMPTS", _DEFAULT_PARALLEL_ATTEMPTS),
+        "--confidence_interval_method",
+        os.environ.get("GARAK_CONFIDENCE_INTERVAL_METHOD", "none"),
         "--report_prefix",
         str(artifact_dir / "garak"),
     ]

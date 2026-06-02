@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from publisher.gates.base import PublisherGate
+from publisher.gates.base import PublisherGate, explain_gate_result
 from publisher.domain.models import PublishContext
 
 
@@ -54,9 +54,16 @@ class IdentityGate(PublisherGate):
             warnings.append("Slug is very generic and may not be stable enough for a registry identifier.")
 
         passed = not blocking_issues
+        explanation = explain_gate_result(
+            passed=passed,
+            passed_message="Identity passed: slug, version, and publish intent are usable.",
+            blocking_issues=blocking_issues,
+            warnings=warnings,
+        )
         context.add_gate_result(
             gate_name=self.name,
             passed=passed,
+            explanation=explanation,
             blocking_issues=blocking_issues,
             warnings=warnings,
             data={
@@ -77,7 +84,8 @@ class IdentityGate(PublisherGate):
                 "warnings": warnings,
             },
             messages=[
-                "Identity gate verified whether publish identity is ready for Metadata."
+                "Identity gate verified whether publish identity is ready for Metadata.",
+                explanation,
             ],
         )
         return passed

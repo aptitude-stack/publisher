@@ -140,7 +140,9 @@ def _run_direct_openai_compatible_eval(*, skill_root: Path) -> UpskillEvaluation
         or os.environ.get("OPENAI_API_KEY")
     )
     tests_path = os.environ.get("UPSKILL_TESTS_PATH")
-    if not base_url or not api_key or not tests_path:
+    if not base_url or not api_key:
+        return None
+    if not tests_path and not configured_bool("UPSKILL_USE_DEFAULT_TESTS", default=True):
         return None
 
     try:
@@ -151,7 +153,11 @@ def _run_direct_openai_compatible_eval(*, skill_root: Path) -> UpskillEvaluation
 
     try:
         skill = _load_upskill_skill(skill_root, Skill)
-        test_cases = _load_upskill_test_cases(Path(tests_path), TestCase)
+        test_cases = (
+            _load_upskill_test_cases(Path(tests_path), TestCase)
+            if tests_path
+            else _default_upskill_test_cases(skill_root=skill_root, test_case_type=TestCase)
+        )
     except (OSError, ValueError, TypeError) as exc:
         return UpskillEvaluation(status="failed", reason=str(exc))
 
@@ -246,6 +252,33 @@ def _load_upskill_test_cases(tests_path: Path, test_case_type: Any) -> list[Any]
     if not isinstance(cases, list):
         raise ValueError("UPSKILL_TESTS_PATH must point to a JSON list or an object with cases.")
     return [test_case_type(**case) for case in cases]
+
+
+def _default_upskill_test_cases(*, skill_root: Path, test_case_type: Any) -> list[Any]:
+    """Build one small deterministic test case when no external tests file is configured."""
+    skill_file = skill_root / "SKILL.md"
+    name = skill_root.name
+    description = name
+    try:
+        content = skill_file.read_text(encoding="utf-8")
+    except OSError:
+        content = ""
+    if content.startswith("---\n"):
+        closing_index = content.find("\n---\n", 4)
+        if closing_index != -1:
+            frontmatter = _parse_simple_yaml(content[4:closing_index])
+            name = str(frontmatter.get("name") or name)
+            description = str(frontmatter.get("description") or description)
+
+    return [
+        test_case_type(
+            input=(
+                f"Use the {name} skill for this task. "
+                f"Task description: {description}"
+            ),
+            expected={"mentions_skill_purpose": True},
+        )
+    ]
 
 
 def _average_tokens(total_tokens: int, test_count: int) -> int | None:

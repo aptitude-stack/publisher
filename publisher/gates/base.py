@@ -16,3 +16,20 @@ class PublisherGate(ABC):
     @abstractmethod
     def verify(self, context: PublishContext) -> bool:
         """Return True when the pipeline may continue past this gate."""
+
+
+def explain_gate_result(
+    *,
+    passed: bool,
+    passed_message: str,
+    blocking_issues: list[str],
+    warnings: list[str],
+) -> str:
+    """Return a concise human-readable explanation for one gate result."""
+    if blocking_issues:
+        return "Failed because " + "; ".join(blocking_issues)
+    if warnings:
+        return passed_message + " Warnings: " + "; ".join(warnings)
+    if passed:
+        return passed_message
+    return "Failed without a recorded blocking issue."

@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from publisher.domain.models import PublishContext
+from publisher.integrations.llm_validation import run_llm_skill_validation
 from publisher.stages.base import PublisherStage
 
 
@@ -30,6 +31,7 @@ class ValidationStage(PublisherStage):
             frontmatter, body = self._parse_skill_markdown(context, skill_file)
             self._validate_frontmatter(context, skill_root=skill_root, frontmatter=frontmatter)
             self._validate_body(context, body=body)
+            self._validate_with_llm(context, skill_root=skill_root, skill_file=skill_file)
 
         context.validation.passed = len(context.validation.errors) == 0
         artifact_path = self._write_validation_artifact(
@@ -80,6 +82,7 @@ class ValidationStage(PublisherStage):
             "body_instructions_heading",
             "body_examples_presence",
             "body_troubleshooting_presence",
+            "llm_skill_contract_validation",
         ]
 
     def _resolve_skill_root(self, context: PublishContext) -> Path:
@@ -272,6 +275,24 @@ class ValidationStage(PublisherStage):
             context.validation.warnings.append(
                 "SKILL.md should include a troubleshooting section for common failures."
             )
+
+    def _validate_with_llm(
+        self,
+        context: PublishContext,
+        *,
+        skill_root: Path,
+        skill_file: Path,
+    ) -> None:
+        """Run optional token-backed semantic validation of SKILL.md."""
+        result = run_llm_skill_validation(skill_root=skill_root, skill_file=skill_file)
+        context.validation.notes.append(f"LLM validation status: {result.status}.")
+        if result.model:
+            context.validation.notes.append(f"LLM validation model: {result.model}.")
+        if result.reason:
+            context.validation.notes.append(f"LLM validation reason: {result.reason}.")
+        context.validation.errors.extend(f"LLM: {item}" for item in result.errors)
+        context.validation.warnings.extend(f"LLM: {item}" for item in result.warnings)
+        context.validation.notes.extend(f"LLM: {item}" for item in result.notes)
 
     def _write_validation_artifact(
         self,
