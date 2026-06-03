@@ -57,6 +57,19 @@ def normalize_relationships(value: object) -> dict[str, list[dict[str, Any]]]:
     return normalized
 
 
+def relationship_frontmatter_value(frontmatter: object) -> object:
+    """Return authored relationships from supported frontmatter locations."""
+    if not isinstance(frontmatter, Mapping):
+        return None
+    if "relationships" in frontmatter:
+        return frontmatter.get("relationships")
+
+    metadata = frontmatter.get("metadata")
+    if isinstance(metadata, Mapping):
+        return metadata.get("relationships")
+    return None
+
+
 def _normalize_family(family: str, value: object) -> list[dict[str, Any]]:
     if value is None:
         return []

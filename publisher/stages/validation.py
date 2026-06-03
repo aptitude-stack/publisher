@@ -10,7 +10,7 @@ from typing import Any
 from publisher.domain.models import PublishContext
 from publisher.frontmatter import parse_skill_markdown
 from publisher.integrations.llm_validation import run_llm_skill_validation
-from publisher.relationships import normalize_relationships
+from publisher.relationships import normalize_relationships, relationship_frontmatter_value
 from publisher.stages.base import PublisherStage
 
 
@@ -81,6 +81,7 @@ class ValidationStage(PublisherStage):
             "frontmatter_no_xml_angle_brackets",
             "compatibility_length_if_present",
             "relationships_frontmatter_shape",
+            "relationships_local_targets_warn_if_missing",
             "body_present",
             "body_instructions_heading",
             "body_examples_presence",
@@ -211,9 +212,66 @@ class ValidationStage(PublisherStage):
                 )
 
         try:
-            normalize_relationships(frontmatter.get("relationships"))
+            relationships = normalize_relationships(
+                relationship_frontmatter_value(frontmatter)
+            )
         except ValueError as exc:
             context.validation.errors.append(f"Relationships frontmatter is invalid: {exc}")
+        else:
+            self._validate_relationship_targets(
+                context,
+                skill_root=skill_root,
+                relationships=relationships,
+            )
+
+    def _validate_relationship_targets(
+        self,
+        context: PublishContext,
+        *,
+        skill_root: Path,
+        relationships: dict[str, list[dict[str, Any]]],
+    ) -> None:
+        """Warn when relationship target skills are not in the local repository tree."""
+        if not any(relationships.values()):
+            return
+
+        existing_slugs = self._discover_local_skill_slugs(context, skill_root)
+        for family, items in relationships.items():
+            for item in items:
+                slug = item["slug"]
+                if slug not in existing_slugs:
+                    context.validation.warnings.append(
+                        f"Relationship target {slug} is not present in the local skill repository "
+                        f"(relationships.{family})."
+                    )
+
+    def _discover_local_skill_slugs(
+        self,
+        context: PublishContext,
+        skill_root: Path,
+    ) -> set[str]:
+        """Return skill slugs found under the enclosing repo, or the skill catalog root."""
+        search_root = (
+            Path(context.inventory.repo_root)
+            if context.inventory.repo_root
+            else skill_root.parent
+        )
+        slugs: set[str] = set()
+
+        for skill_file in search_root.rglob("SKILL.md"):
+            if ".publisher_artifacts" in skill_file.parts:
+                continue
+            slugs.add(skill_file.parent.name)
+            try:
+                frontmatter, _body = parse_skill_markdown(
+                    skill_file.read_text(encoding="utf-8")
+                )
+            except (OSError, ValueError):
+                continue
+            name = frontmatter.get("name")
+            if isinstance(name, str) and name.strip():
+                slugs.add(name.strip())
+        return slugs
 
     def _has_trigger_guidance(self, description: str) -> bool:
         """Heuristic check that the description includes use-when guidance."""
