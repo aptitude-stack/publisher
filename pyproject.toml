@@ -1,7 +1,27 @@
 [project]
-name = "publisher"
+name = "aptitude-publisher"
 version = "0.1.0"
+description = "Publisher CLI for evaluating and publishing Aptitude skills"
+readme = "README.md"
 requires-python = ">=3.12"
+keywords = [
+    "ai",
+    "cli",
+    "publisher",
+    "registry",
+    "skills",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development",
+    "Topic :: Utilities",
+]
 dependencies = [
     "garak",
     "prompt-toolkit>=3.0",
@@ -10,6 +30,12 @@ dependencies = [
     "upskill",
     "zstandard>=0.23,<0.24",
 ]
+
+[project.urls]
+Homepage = "https://github.com/aptitude-stack/publisher"
+Repository = "https://github.com/aptitude-stack/publisher"
+Issues = "https://github.com/aptitude-stack/publisher/issues"
+Documentation = "https://github.com/aptitude-stack/publisher/tree/main/docs"
 
 [project.optional-dependencies]
 dev = [
