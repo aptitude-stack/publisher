@@ -1,5 +1,3 @@
-![Aptitude Publisher banner](docs/assets/aptitude-publisher-banner.png)
-
 # Aptitude Publisher
 
 ![Python](https://img.shields.io/badge/python-3-12-3776AB?style=for-the-badge&logo=python&logoColor=white)

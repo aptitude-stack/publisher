@@ -1,5 +1,3 @@
-![Aptitude Publisher banner](https://raw.githubusercontent.com/aptitude-stack/publisher/master/docs/assets/aptitude-publisher-banner.png)
-
 # Aptitude Publisher
 
 [![PyPI](https://img.shields.io/badge/PyPI-aptitude--publisher-3775A9?style=for-the-badge&logo=pypi&logoColor=white)](https://pypi.org/project/aptitude-publisher/)
