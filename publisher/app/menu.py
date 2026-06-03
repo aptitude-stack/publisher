@@ -62,6 +62,10 @@ WORDMARK = (
 )
 
 
+class _BackToMainMenu(Exception):
+    """Raised by submenu key bindings to return to the top-level menu."""
+
+
 @dataclass(frozen=True, slots=True)
 class MenuSkill:
     """One skill folder available to the wizard."""
@@ -99,8 +103,8 @@ def run_menu() -> int:
             action = _select(
                 "Choose a flow",
                 [
-                    ("Full inspect", "inspect"),
                     ("Publish to registry", "publish"),
+                    ("Full inspect", "inspect"),
                     ("Help", "help"),
                     ("Exit", "exit"),
                 ],
@@ -116,33 +120,36 @@ def run_menu() -> int:
                 _render_help()
                 continue
             if action == "exit":
-                CONSOLE.print("[grey70]No publish workflow was started.[/grey70]")
+                CONSOLE.print("[grey70]Exited publisher wizard.[/grey70]")
                 return 0
 
-            plan = _build_publish_plan(action)
-            _render_plan(plan)
-            if not _confirm("Run this workflow?", default=True):
-                CONSOLE.print("[grey70]Workflow cancelled.[/grey70]")
-                continue
-            result = _execute_plan(plan)
-            if result == 0:
-                continue
-
-            while result != 0:
-                failure_action = _select_failure_action()
-                if failure_action == "main_menu":
-                    break
-
-                plan = _build_publish_plan("publish")
+            try:
+                plan = _build_publish_plan(action)
                 _render_plan(plan)
-                if not _confirm("Run this workflow?", default=True):
+                if not _confirm("Run this workflow?", default=True, allow_back=True):
                     CONSOLE.print("[grey70]Workflow cancelled.[/grey70]")
-                    break
+                    continue
                 result = _execute_plan(plan)
                 if result == 0:
-                    break
+                    continue
+
+                while result != 0:
+                    failure_action = _select_failure_action()
+                    if failure_action == "main_menu":
+                        break
+
+                    plan = _build_publish_plan("publish")
+                    _render_plan(plan)
+                    if not _confirm("Run this workflow?", default=True, allow_back=True):
+                        CONSOLE.print("[grey70]Workflow cancelled.[/grey70]")
+                        break
+                    result = _execute_plan(plan)
+                    if result == 0:
+                        break
+            except _BackToMainMenu:
+                continue
     except KeyboardInterrupt:
-        CONSOLE.print("[grey70]No publish workflow was started.[/grey70]")
+        CONSOLE.print("[grey70]Exited publisher wizard.[/grey70]")
         return 0
 
 
@@ -204,6 +211,7 @@ def _build_publish_plan(action: Action) -> PublishPlan:
             "create_skill": "Use this when the registry does not have the skill yet.",
             "publish_version": "Use this when the slug already exists and this is a new version.",
         },
+        allow_back=True,
     )
     scan_profile = _select(
         "Inspection depth",
@@ -216,6 +224,7 @@ def _build_publish_plan(action: Action) -> PublishPlan:
             "fast": "Use quicker checks for local iteration.",
             "slow": "Use broader checks for deeper review.",
         },
+        allow_back=True,
     )
 
     return PublishPlan(
@@ -279,6 +288,7 @@ def _select_skill(skills: list[MenuSkill]) -> MenuSkill | None:
             "local": "Select a skill discovered in this publisher workspace.",
             "path": "Enter a skill folder outside the local list.",
         },
+        allow_back=True,
     )
     if source == "path":
         return None
@@ -293,6 +303,7 @@ def _select_skill(skills: list[MenuSkill]) -> MenuSkill | None:
             skill: str(skill.path)
             for skill in skills
         },
+        allow_back=True,
     )
 
 
@@ -308,6 +319,7 @@ def _select_failure_action() -> FailureAction:
             "upload_another": "Start a new publish workflow with a different skill.",
             "main_menu": "Return to the first menu.",
         },
+        allow_back=True,
     )
 
 
@@ -346,7 +358,7 @@ def _execute_plan(plan: PublishPlan) -> int:
 
     _render_bundle(context, bundle_bytes)
     _render_relationship_alerts(context)
-    if not _confirm("Upload this skill to the registry?", default=False):
+    if not _confirm("Upload this skill to the registry?", default=False, allow_back=True):
         CONSOLE.print("[grey70]Upload cancelled.[/grey70]")
         return 0
 
@@ -409,6 +421,7 @@ def _render_plan(plan: PublishPlan) -> None:
     if plan.publisher_identity:
         table.add_row("Publisher", plan.publisher_identity)
     CONSOLE.print(Panel(table, title="Publish Plan", border_style="grey35"))
+    CONSOLE.print()
 
 
 def _render_pipeline_report(context: PublishContext) -> None:
@@ -769,6 +782,7 @@ def _select(
     default: T | None = None,
     descriptions: dict[T, str] | None = None,
     subtitle: str | None = None,
+    allow_back: bool = False,
 ) -> T:
     if not options:
         raise ValueError("options cannot be empty")
@@ -786,6 +800,7 @@ def _select(
             options,
             default_index=default_index,
             subtitle=subtitle,
+            allow_back=allow_back,
         )
 
     try:
@@ -801,6 +816,7 @@ def _select(
             options,
             default_index=default_index,
             subtitle=subtitle,
+            allow_back=allow_back,
         )
 
     state = {"index": default_index}
@@ -823,7 +839,11 @@ def _select(
             if is_active and active_description:
                 fragments.append(("class:detail", f" - {active_description}"))
             fragments.append(("", "\n"))
-        fragments.append(("class:hint", "\n[↑↓] move  [enter] confirm  [q] cancel\n\n"))
+        hint = "\n[↑↓] move  [enter] confirm"
+        if allow_back:
+            hint += "  [b] back to main"
+        hint += "  [q] cancel\n\n"
+        fragments.append(("class:hint", hint))
         return fragments
 
     control = FormattedTextControl(render_menu, focusable=True)
@@ -847,6 +867,11 @@ def _select(
     @bindings.add("c-c")
     def _abort(event) -> None:
         event.app.exit(exception=KeyboardInterrupt())
+
+    if allow_back:
+        @bindings.add("b")
+        def _back_to_main(event) -> None:
+            event.app.exit(exception=_BackToMainMenu())
 
     application: Application[T] = Application(
         layout=Layout(HSplit([Window(control, always_hide_cursor=True)])),
@@ -874,15 +899,20 @@ def _prompt_select(
     *,
     default_index: int,
     subtitle: str | None = None,
+    allow_back: bool = False,
 ) -> T:
     CONSOLE.print(f"[bold]{title}[/bold]")
     if subtitle:
         CONSOLE.print(subtitle)
         CONSOLE.print()
+    if allow_back:
+        CONSOLE.print("0. Back to main menu")
     for index, (label, _) in enumerate(options, start=1):
         CONSOLE.print(f"{index}. {label}")
     while True:
         raw = CONSOLE.input(f"Select [{default_index + 1}]: ").strip()
+        if allow_back and raw.lower() in {"0", "b", "back"}:
+            raise _BackToMainMenu()
         if not raw:
             return options[default_index][1]
         try:
@@ -917,7 +947,7 @@ def _prompt_path(label: str) -> Path:
         CONSOLE.print("[yellow]Path does not exist.[/yellow]")
 
 
-def _confirm(label: str, *, default: bool) -> bool:
+def _confirm(label: str, *, default: bool, allow_back: bool = False) -> bool:
     return _select(
         label,
         [
@@ -925,6 +955,7 @@ def _confirm(label: str, *, default: bool) -> bool:
             ("No", False),
         ],
         default=default,
+        allow_back=allow_back,
     )
 
 
