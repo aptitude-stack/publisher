@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import argparse
+from importlib import metadata as importlib_metadata
 import os
 import sys
+import tomllib
 from pathlib import Path
 
 from publisher.artifacts.bundle import build_bundle_bytes
@@ -17,6 +19,7 @@ from publisher.registry.client import (
 
 
 _DEFAULT_REGISTRY_URL = "http://127.0.0.1:8000"
+_PACKAGE_NAME = "aptitude-publisher"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -45,6 +48,11 @@ def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="aptitude-publisher",
         description="Evaluate Aptitude skills and publish them to the registry.",
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {_publisher_cli_version()}",
     )
     subparsers = parser.add_subparsers(dest="command")
 
@@ -191,11 +199,12 @@ def _run_pipeline(args: argparse.Namespace):
 
 def _print_pipeline_report(context) -> None:
     print(_separator())
-    print("Aptitude Publisher")
+    print(f"Aptitude Publisher {_publisher_cli_version()}")
     print(_separator())
+    print(f"cli version     {_publisher_cli_version()}")
     print(f"skill path      {context.inventory.skill_root}")
     print(f"slug            {context.identity.slug}")
-    print(f"version         {context.identity.version}")
+    print(f"skill version   {context.identity.version}")
     print(f"intent          {context.identity.intent}")
     print(f"trust tier      {context.source.trust_tier}")
     print(f"namespace       {context.source.namespace}")
@@ -370,6 +379,19 @@ def _has_relationships(relationships: dict[str, object]) -> bool:
 
 def _separator() -> str:
     return "-" * 72
+
+
+def _publisher_cli_version() -> str:
+    try:
+        return importlib_metadata.version(_PACKAGE_NAME)
+    except importlib_metadata.PackageNotFoundError:
+        pyproject_path = Path(__file__).resolve().parents[2] / "pyproject.toml"
+        if not pyproject_path.is_file():
+            return "unknown"
+        data = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
+        project = data.get("project", {})
+        version = project.get("version") if isinstance(project, dict) else None
+        return str(version or "unknown")
 
 
 def _load_local_env_defaults() -> None:

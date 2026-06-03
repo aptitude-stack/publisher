@@ -21,6 +21,7 @@ from publisher.app.cli import (
     _default_publish_token,
     _default_registry_url,
     _load_local_env_defaults,
+    _publisher_cli_version,
     _registry_result_lines,
     _relationship_alert_lines,
     _relationship_check_token,
@@ -148,7 +149,8 @@ def run_menu() -> int:
 def _render_header() -> None:
     CONSOLE.print(Text(WORDMARK, style="bold white"))
     CONSOLE.print(
-        "Aptitude Publisher - Review-first CLI for validating and publishing skills."
+        f"Aptitude Publisher {_publisher_cli_version()} - "
+        "Review-first CLI for validating and publishing skills."
     )
     CONSOLE.print("─" * CONSOLE.width, style="grey35")
     CONSOLE.print()
@@ -392,8 +394,9 @@ def _render_plan(plan: PublishPlan) -> None:
     table.add_column(style="grey70", no_wrap=True)
     table.add_column(style="white")
     table.add_row("Action", _action_label(plan.action))
+    table.add_row("CLI version", _publisher_cli_version())
     table.add_row("Skill", str(plan.skill_path))
-    table.add_row("Version", "from SKILL.md metadata")
+    table.add_row("Skill version", "resolved during inspection")
     table.add_row("Intent", plan.intent)
     table.add_row("Inspection depth", _scan_profile_label(plan.scan_profile))
     table.add_row("Trust", plan.trust_tier)
@@ -412,9 +415,10 @@ def _render_pipeline_report(context: PublishContext) -> None:
     summary = Table.grid(expand=True, padding=(0, 2))
     summary.add_column(style="grey70", no_wrap=True)
     summary.add_column(style="white")
+    summary.add_row("CLI version", _publisher_cli_version())
     summary.add_row("Skill path", str(context.inventory.skill_root))
     summary.add_row("Slug", context.identity.slug)
-    summary.add_row("Version", context.identity.version)
+    summary.add_row("Skill version", context.identity.version)
     summary.add_row("Intent", context.identity.intent)
     summary.add_row("Trust tier", context.source.trust_tier)
     summary.add_row("Namespace", context.source.namespace)
