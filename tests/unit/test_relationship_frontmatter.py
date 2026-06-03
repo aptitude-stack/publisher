@@ -68,6 +68,23 @@ def _context_for_skill(tmp_path, frontmatter_extra: str = ""):
     return PublisherPipeline().create_context(file_path=str(skill_root))
 
 
+def _write_related_skill(tmp_path, name: str) -> None:
+    skill_root = tmp_path / name
+    skill_root.mkdir()
+    (skill_root / "SKILL.md").write_text(
+        f"""---
+name: {name}
+description: "Helps validate relationship targets; use when another skill references it."
+---
+
+# Instructions
+
+Use this skill as a local relationship target.
+""",
+        encoding="utf-8",
+    )
+
+
 def test_parse_skill_markdown_accepts_nested_relationship_yaml() -> None:
     frontmatter, _body = parse_skill_markdown(
         _skill_markdown(
@@ -155,6 +172,36 @@ def test_delivery_payload_includes_authored_frontmatter_relationships(tmp_path) 
     }
 
 
+def test_delivery_payload_includes_metadata_relationships(tmp_path) -> None:
+    context = _context_for_skill(
+        tmp_path,
+        """  relationships:
+    depends_on:
+      - slug: python.base
+        version_constraint: ">=1.0.0,<2.0.0"
+        optional: true
+""",
+    )
+    DiscoveryStage().run(context)
+    context.identity.slug = "relationship-skill"
+    context.identity.version = "1.0.0"
+    context.identity.intent = "create_skill"
+    context.metadata.name = "relationship-skill"
+    context.metadata.description = "Relationship skill"
+    context.metadata.tags = ["relationships", "registry"]
+
+    DeliveryStage().run(context)
+
+    metadata = build_publish_metadata(context)
+    assert metadata["relationships"]["depends_on"] == [
+        {
+            "slug": "python.base",
+            "version_constraint": ">=1.0.0,<2.0.0",
+            "optional": True,
+        }
+    ]
+
+
 @pytest.mark.parametrize(
     ("relationships", "message"),
     [
@@ -220,6 +267,79 @@ def test_validation_blocks_invalid_relationship_frontmatter(tmp_path, monkeypatc
         "exactly one of version or version_constraint" in error
         for error in context.validation.errors
     )
+
+
+def test_validation_warns_when_relationship_targets_missing_from_repo(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("PUBLISHER_LLM_VALIDATION_ENABLED", "false")
+    context = _context_for_skill(
+        tmp_path,
+        """relationships:
+  depends_on:
+    - slug: missing-skill
+      version_constraint: ">=1.0.0"
+""",
+    )
+
+    DiscoveryStage().run(context)
+    ValidationStage().run(context)
+
+    assert context.validation.passed
+    assert any(
+        "Relationship target missing-skill is not present in the local skill repository"
+        in warning
+        for warning in context.validation.warnings
+    )
+    assert context.validation.errors == []
+
+
+def test_validation_warns_when_metadata_relationship_targets_missing_from_repo(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("PUBLISHER_LLM_VALIDATION_ENABLED", "false")
+    context = _context_for_skill(
+        tmp_path,
+        """  relationships:
+    depends_on:
+      - slug: missing-skill
+        version_constraint: ">=1.0.0"
+""",
+    )
+
+    DiscoveryStage().run(context)
+    ValidationStage().run(context)
+
+    assert context.validation.passed
+    assert any(
+        "Relationship target missing-skill is not present in the local skill repository"
+        in warning
+        for warning in context.validation.warnings
+    )
+    assert context.validation.errors == []
+
+
+def test_validation_accepts_relationship_targets_present_in_repo(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("PUBLISHER_LLM_VALIDATION_ENABLED", "false")
+    _write_related_skill(tmp_path, "present-skill")
+    context = _context_for_skill(
+        tmp_path,
+        """relationships:
+  depends_on:
+    - slug: present-skill
+      version_constraint: ">=1.0.0"
+""",
+    )
+
+    DiscoveryStage().run(context)
+    ValidationStage().run(context)
+
+    assert context.validation.passed
 
 
 def test_check_relationship_references_reports_missing_skills(monkeypatch) -> None:
