@@ -1,6 +1,6 @@
 # Aptitude Publisher
 
-![Python](https://img.shields.io/badge/python-3-12-3776AB?style=for-the-badge&logo=python&logoColor=white)
+![Python](https://img.shields.io/badge/python-3.12-3776AB?style=for-the-badge&logo=python&logoColor=white)
 ![uv](https://img.shields.io/badge/uv-managed-6E56CF?style=for-the-badge&logo=uv&logoColor=white)
 ![Rich](https://img.shields.io/badge/rich-CLI-111111?style=for-the-badge)
 ![pytest](https://img.shields.io/badge/pytest-0A9EDC?style=for-the-badge&logo=pytest&logoColor=white)
