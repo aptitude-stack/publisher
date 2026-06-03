@@ -17,7 +17,7 @@ _DEPENDENCY_FIELDS = frozenset(
     {"slug", "version", "version_constraint", "optional", "markers"}
 )
 _EXACT_FIELDS = frozenset({"slug", "version"})
-_SLUG_PATTERN = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,127})$")
+_SLUG_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,127})$")
 _SEMVER_PATTERN = re.compile(
     r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)"
     r"(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?"

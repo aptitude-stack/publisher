@@ -29,10 +29,10 @@ class IdentityGate(PublisherGate):
         if not slug:
             blocking_issues.append("Identity did not extract a slug.")
         elif not isinstance(slug, str) or not re.fullmatch(
-            r"[A-Za-z0-9](?:[A-Za-z0-9._-]{0,127})", slug
+            r"[a-z0-9](?:[a-z0-9-]{0,127})", slug
         ):
             blocking_issues.append(
-                "Slug must match the registry identifier pattern and may include dots, underscores, and hyphens."
+                "Slug must be lowercase and hyphenated, matching the registry identifier pattern."
             )
 
         if not version:

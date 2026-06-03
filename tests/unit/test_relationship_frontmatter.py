@@ -90,23 +90,23 @@ def test_parse_skill_markdown_accepts_nested_relationship_yaml() -> None:
         _skill_markdown(
             """relationships:
   depends_on:
-    - slug: python.base
+    - slug: python-base
       version_constraint: ">=1.0.0,<2.0.0"
       optional: false
       markers: ["linux"]
   extends:
-    - slug: python.base
+    - slug: python-base
       version: 1.0.0
   conflicts_with: []
   overlaps_with:
-    - slug: python.format
+    - slug: python-format
       version: 2.0.0
 """
         )
     )
 
     relationships = frontmatter["relationships"]
-    assert relationships["depends_on"][0]["slug"] == "python.base"
+    assert relationships["depends_on"][0]["slug"] == "python-base"
     assert (
         relationships["depends_on"][0]["version_constraint"]
         == ">=1.0.0,<2.0.0"
@@ -126,23 +126,30 @@ def test_normalize_relationships_defaults_to_empty_registry_families() -> None:
     }
 
 
+def test_normalize_relationships_rejects_dotted_slug() -> None:
+    with pytest.raises(ValueError, match="not a valid registry slug"):
+        normalize_relationships(
+            {"depends_on": [{"slug": "python.base", "version": "1.0.0"}]}
+        )
+
+
 def test_delivery_payload_includes_authored_frontmatter_relationships(tmp_path) -> None:
     context = _context_for_skill(
         tmp_path,
         """relationships:
   depends_on:
-    - slug: python.base
+    - slug: python-base
       version_constraint: ">=1.0.0,<2.0.0"
       optional: true
       markers: ["ci", "linux"]
   extends:
-    - slug: python.base
+    - slug: python-base
       version: 1.0.0
   conflicts_with:
-    - slug: python.legacy
+    - slug: python-legacy
       version: 0.9.0
   overlaps_with:
-    - slug: python.format
+    - slug: python-format
       version: 2.0.0
 """,
     )
@@ -160,15 +167,15 @@ def test_delivery_payload_includes_authored_frontmatter_relationships(tmp_path) 
     assert metadata["relationships"] == {
         "depends_on": [
             {
-                "slug": "python.base",
+                "slug": "python-base",
                 "version_constraint": ">=1.0.0,<2.0.0",
                 "optional": True,
                 "markers": ["ci", "linux"],
             }
         ],
-        "extends": [{"slug": "python.base", "version": "1.0.0"}],
-        "conflicts_with": [{"slug": "python.legacy", "version": "0.9.0"}],
-        "overlaps_with": [{"slug": "python.format", "version": "2.0.0"}],
+        "extends": [{"slug": "python-base", "version": "1.0.0"}],
+        "conflicts_with": [{"slug": "python-legacy", "version": "0.9.0"}],
+        "overlaps_with": [{"slug": "python-format", "version": "2.0.0"}],
     }
 
 
@@ -177,7 +184,7 @@ def test_delivery_payload_includes_metadata_relationships(tmp_path) -> None:
         tmp_path,
         """  relationships:
     depends_on:
-      - slug: python.base
+      - slug: python-base
         version_constraint: ">=1.0.0,<2.0.0"
         optional: true
 """,
@@ -195,7 +202,7 @@ def test_delivery_payload_includes_metadata_relationships(tmp_path) -> None:
     metadata = build_publish_metadata(context)
     assert metadata["relationships"]["depends_on"] == [
         {
-            "slug": "python.base",
+            "slug": "python-base",
             "version_constraint": ">=1.0.0,<2.0.0",
             "optional": True,
         }
@@ -209,7 +216,7 @@ def test_delivery_payload_includes_metadata_relationships(tmp_path) -> None:
             {
                 "depends_on": [
                     {
-                        "slug": "python.base",
+                        "slug": "python-base",
                         "version": "1.0.0",
                         "version_constraint": ">=1.0.0,<2.0.0",
                     }
@@ -218,18 +225,18 @@ def test_delivery_payload_includes_metadata_relationships(tmp_path) -> None:
             "exactly one of version or version_constraint",
         ),
         (
-            {"depends_on": [{"slug": "python.base"}]},
+            {"depends_on": [{"slug": "python-base"}]},
             "exactly one of version or version_constraint",
         ),
         (
-            {"suggests": [{"slug": "python.base", "version": "1.0.0"}]},
+            {"suggests": [{"slug": "python-base", "version": "1.0.0"}]},
             "Unknown relationship family",
         ),
         (
             {
                 "extends": [
                     {
-                        "slug": "python.base",
+                        "slug": "python-base",
                         "version": "1.0.0",
                         "version_constraint": ">=1.0.0,<2.0.0",
                     }
@@ -253,7 +260,7 @@ def test_validation_blocks_invalid_relationship_frontmatter(tmp_path, monkeypatc
         tmp_path,
         """relationships:
   depends_on:
-    - slug: python.base
+    - slug: python-base
       version: 1.0.0
       version_constraint: ">=1.0.0,<2.0.0"
 """,
@@ -345,13 +352,13 @@ def test_validation_accepts_relationship_targets_present_in_repo(
 def test_check_relationship_references_reports_missing_skills(monkeypatch) -> None:
     def fake_urlopen(http_request, timeout):
         url = http_request.full_url
-        if url.endswith("/skills/python.base"):
-            return _FakeResponse(b'{"slug":"python.base","versions":[{"version":"1.0.0"}]}')
-        if url.endswith("/skills/python.missing/9.9.9"):
+        if url.endswith("/skills/python-base"):
+            return _FakeResponse(b'{"slug":"python-base","versions":[{"version":"1.0.0"}]}')
+        if url.endswith("/skills/python-missing/9.9.9"):
             from urllib.error import HTTPError
 
             raise HTTPError(url, 404, "not found", hdrs=None, fp=None)
-        if url.endswith("/skills/python.ghost"):
+        if url.endswith("/skills/python-ghost"):
             from urllib.error import HTTPError
 
             raise HTTPError(url, 404, "not found", hdrs=None, fp=None)
@@ -364,10 +371,10 @@ def test_check_relationship_references_reports_missing_skills(monkeypatch) -> No
         token="reader.token",
         relationships={
             "depends_on": [
-                {"slug": "python.base", "version_constraint": ">=1.0.0,<2.0.0"},
-                {"slug": "python.ghost", "version_constraint": ">=1.0.0,<2.0.0"},
+                {"slug": "python-base", "version_constraint": ">=1.0.0,<2.0.0"},
+                {"slug": "python-ghost", "version_constraint": ">=1.0.0,<2.0.0"},
             ],
-            "extends": [{"slug": "python.missing", "version": "9.9.9"}],
+            "extends": [{"slug": "python-missing", "version": "9.9.9"}],
             "conflicts_with": [],
             "overlaps_with": [],
         },
@@ -377,16 +384,16 @@ def test_check_relationship_references_reports_missing_skills(monkeypatch) -> No
         RelationshipCheckIssue(
             kind="missing",
             family="depends_on",
-            slug="python.ghost",
+            slug="python-ghost",
             version=None,
-            message="No visible versions found for relationship target python.ghost.",
+            message="No visible versions found for relationship target python-ghost.",
         ),
         RelationshipCheckIssue(
             kind="missing",
             family="extends",
-            slug="python.missing",
+            slug="python-missing",
             version="9.9.9",
-            message="Relationship target python.missing@9.9.9 was not found.",
+            message="Relationship target python-missing@9.9.9 was not found.",
         ),
     ]
 
@@ -397,14 +404,14 @@ def test_relationship_alert_lines_describe_missing_targets() -> None:
             RelationshipCheckIssue(
                 kind="missing",
                 family="extends",
-                slug="python.missing",
+                slug="python-missing",
                 version="9.9.9",
-                message="Relationship target python.missing@9.9.9 was not found.",
+                message="Relationship target python-missing@9.9.9 was not found.",
             )
         ]
     )
 
     assert lines == [
-        "- missing extends target python.missing@9.9.9: "
-        "Relationship target python.missing@9.9.9 was not found."
+        "- missing extends target python-missing@9.9.9: "
+        "Relationship target python-missing@9.9.9 was not found."
     ]
