@@ -79,6 +79,15 @@ Publish a skill to the configured registry:
 aptitude-publisher publish /path/to/skill --intent create_skill
 ```
 
+Upload multiple skills concurrently with an admin-scoped registry token:
+
+```bash
+export APTITUDE_ADMIN_TOKEN=admin-token
+aptitude-publisher admin-batch-upload /path/to/skill-a /path/to/skill-b --intent create_skill
+```
+
+Batch upload runs local scans and uploads in the background, then prints only a final summary.
+
 Publish a new version of an existing skill:
 
 ```bash
@@ -118,6 +127,7 @@ Generated files under `.publisher_artifacts/` are local trace artifacts. They ar
 - weighted publish ranking and block/allow decisions
 - deterministic `tar.zst` bundle creation
 - registry upload with multipart artifact delivery
+- admin batch upload with summary-only output
 
 ---
 

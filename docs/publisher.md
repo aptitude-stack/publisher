@@ -3,6 +3,18 @@
 The publisher prepares a local skill folder, evaluates it, builds the registry
 payload, and uploads a deterministic `.tar.zst` bundle.
 
+## Admin Batch Upload
+
+`aptitude-publisher admin-batch-upload` accepts multiple skill folder paths and
+runs the normal publisher pipeline for each skill concurrently. It uses an
+admin-scoped registry token from `--admin-token`, `APTITUDE_ADMIN_TOKEN`,
+`APTITUDE_REGISTRY_ADMIN_TOKEN`, or `REGISTRY_ADMIN_TOKEN`.
+
+Batch mode intentionally suppresses per-skill pipeline reports. Local scans,
+bundle creation, duplicate checks, and uploads run in the background; the CLI
+prints one final summary with status, HTTP code, slug, version, and message for
+each input skill.
+
 ## Stages
 
 1. `discovery`

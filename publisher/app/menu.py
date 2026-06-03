@@ -55,6 +55,23 @@ ArtifactOrigin = Literal["internal", "imported", "verified", "restricted"]
 T = TypeVar("T")
 
 CONSOLE = Console()
+
+
+@dataclass(frozen=True, slots=True)
+class CliTheme:
+    """Visual tokens shared across the publisher wizard."""
+
+    text_primary: str = "bold white"
+    text_body: str = "white"
+    text_muted: str = "grey70"
+    text_subtle: str = "grey50"
+    text_detail: str = "grey82"
+    border_primary: str = "grey27"
+    border_secondary: str = "grey35"
+    accent: str = "#8fa3ad"
+
+
+THEME = CliTheme()
 WORDMARK = (
     "\n"
     "   ______          __          \n"
@@ -161,13 +178,48 @@ def run_menu() -> int:
 
 
 def _render_header() -> None:
-    CONSOLE.print(Text(WORDMARK, style="bold white"))
+    CONSOLE.print(Text(WORDMARK, style=THEME.text_primary))
     CONSOLE.print(
         f"Aptitude Publisher {_publisher_cli_version()} - "
         "Review-first CLI for validating and publishing skills."
     )
-    CONSOLE.print("─" * CONSOLE.width, style="grey35")
+    CONSOLE.print("─" * CONSOLE.width, style=THEME.border_secondary)
     CONSOLE.print()
+
+
+def _panel_box_for_stream(stream: object) -> box.Box:
+    """Return the best available Rich box style for the current stream."""
+
+    if _stream_supports_text(stream, "╭╮╰╯│─"):
+        return box.ROUNDED
+    return box.ASCII
+
+
+def _table_box_for_stream(stream: object) -> box.Box:
+    """Return a light table box that does not compete with panel frames."""
+
+    if _stream_supports_text(stream, "─"):
+        return box.SIMPLE_HEAD
+    return box.ASCII2
+
+
+def _frame(
+    renderable: Any,
+    *,
+    title: str,
+    border_style: str | None = None,
+    subtitle: str | None = None,
+) -> Panel:
+    """Render one resolver-style publisher frame."""
+
+    return Panel(
+        renderable,
+        title=title,
+        subtitle=subtitle,
+        border_style=border_style or THEME.border_secondary,
+        box=_panel_box_for_stream(sys.stdout),
+        padding=(1, 1),
+    )
 
 
 def _render_help() -> None:
@@ -184,16 +236,16 @@ def _render_help() -> None:
     ]
     table = Table(
         show_header=True,
-        header_style="grey70",
-        border_style="grey35",
-        box=box.ROUNDED,
+        header_style=THEME.text_muted,
+        border_style=THEME.border_primary,
+        box=_table_box_for_stream(sys.stdout),
         expand=True,
     )
-    table.add_column("Phase", style="bold white", no_wrap=True)
-    table.add_column("What it means", style="white")
+    table.add_column("Phase", style=THEME.text_primary, no_wrap=True)
+    table.add_column("What it means", style=THEME.text_body)
     for phase, meaning in rows:
         table.add_row(phase, meaning)
-    CONSOLE.print(Panel(table, title="Publisher Flow", border_style="grey35"))
+    CONSOLE.print(_frame(table, title="Publisher Flow"))
 
 
 def _build_publish_plan(action: Action) -> PublishPlan:
@@ -341,7 +393,7 @@ def _execute_plan(plan: PublishPlan) -> int:
     if not _publish_payload_ready(context) or context.ranking.publish_decision == "block":
         reasons = _format_gate_failures(context)
         CONSOLE.print(
-            Panel(
+            _frame(
                 "[red]Publish blocked before registry upload.[/red]"
                 + (f"\n\n{reasons}" if reasons else ""),
                 title="Publish Decision",
@@ -360,7 +412,7 @@ def _execute_plan(plan: PublishPlan) -> int:
             bundle_bytes = build_bundle_bytes(context)
     except RuntimeError as exc:
         CONSOLE.print(
-            Panel(
+            _frame(
                 f"[red]{exc}[/red]",
                 title="Bundle creation failed",
                 border_style="red",
@@ -376,7 +428,7 @@ def _execute_plan(plan: PublishPlan) -> int:
 
     if not publish_token:
         CONSOLE.print(
-            Panel(
+            _frame(
                 "Set APTITUDE_PUBLISH_TOKEN or PUBLISH_TOKEN before publishing.",
                 title="Missing publish token",
                 border_style="red",
@@ -414,8 +466,8 @@ def _run_pipeline(plan: PublishPlan) -> PublishContext:
 
 def _render_plan(plan: PublishPlan) -> None:
     table = Table.grid(expand=True, padding=(0, 2))
-    table.add_column(style="grey70", no_wrap=True)
-    table.add_column(style="white")
+    table.add_column(style=THEME.text_muted, no_wrap=True)
+    table.add_column(style=THEME.text_body)
     table.add_row("Action", _action_label(plan.action))
     table.add_row("CLI version", _publisher_cli_version())
     table.add_row("Skill", str(plan.skill_path))
@@ -431,14 +483,14 @@ def _render_plan(plan: PublishPlan) -> None:
         table.add_row("Policy pack", plan.policy_pack_slug)
     if plan.publisher_identity:
         table.add_row("Publisher", plan.publisher_identity)
-    CONSOLE.print(Panel(table, title="Publish Plan", border_style="grey35"))
+    CONSOLE.print(_frame(table, title="Publish Plan"))
     CONSOLE.print()
 
 
 def _render_pipeline_report(context: PublishContext) -> None:
     summary = Table.grid(expand=True, padding=(0, 2))
-    summary.add_column(style="grey70", no_wrap=True)
-    summary.add_column(style="white")
+    summary.add_column(style=THEME.text_muted, no_wrap=True)
+    summary.add_column(style=THEME.text_body)
     summary.add_row("CLI version", _publisher_cli_version())
     summary.add_row("Skill path", str(context.inventory.skill_root))
     summary.add_row("Slug", context.identity.slug)
@@ -450,13 +502,13 @@ def _render_pipeline_report(context: PublishContext) -> None:
 
     evaluation = Table(
         show_header=True,
-        header_style="grey70",
-        border_style="grey35",
-        box=box.ROUNDED,
+        header_style=THEME.text_muted,
+        border_style=THEME.border_primary,
+        box=_table_box_for_stream(sys.stdout),
         expand=True,
     )
-    evaluation.add_column("Signal", style="grey70")
-    evaluation.add_column("Value", style="white")
+    evaluation.add_column("Signal", style=THEME.text_muted)
+    evaluation.add_column("Value", style=THEME.text_body)
     evaluation.add_row("Validation", "passed" if context.validation.passed else "failed")
     evaluation.add_row("LLM Guard status", str(context.metadata.extra.get("llm_guard_security", {}).get("status")))
     evaluation.add_row("Security score", str(context.security.score))
@@ -471,26 +523,26 @@ def _render_pipeline_report(context: PublishContext) -> None:
 
     stages = Table(
         show_header=True,
-        header_style="grey70",
-        border_style="grey35",
-        box=box.ROUNDED,
+        header_style=THEME.text_muted,
+        border_style=THEME.border_primary,
+        box=_table_box_for_stream(sys.stdout),
         expand=True,
     )
-    stages.add_column("Stage", style="white")
-    stages.add_column("Status", style="grey70")
+    stages.add_column("Stage", style=THEME.text_body)
+    stages.add_column("Status", style=THEME.text_muted)
     for snapshot in context.stage_history:
         stages.add_row(snapshot.stage_name, snapshot.status)
 
     gates = Table(
         show_header=True,
-        header_style="grey70",
-        border_style="grey35",
-        box=box.ROUNDED,
+        header_style=THEME.text_muted,
+        border_style=THEME.border_primary,
+        box=_table_box_for_stream(sys.stdout),
         expand=True,
     )
-    gates.add_column("Gate", style="white")
-    gates.add_column("Status", style="grey70", no_wrap=True)
-    gates.add_column("Why", style="white")
+    gates.add_column("Gate", style=THEME.text_body)
+    gates.add_column("Status", style=THEME.text_muted, no_wrap=True)
+    gates.add_column("Why", style=THEME.text_body)
     for gate in context.gate_history:
         status = "passed" if gate.passed else "failed"
         explanation = gate.explanation or ""
@@ -505,15 +557,15 @@ def _render_pipeline_report(context: PublishContext) -> None:
         gates.add_row(gate.gate_name, status, explanation)
 
     panels: list[Panel] = [
-        Panel(summary, title="Skill Identity", border_style="grey35"),
-        Panel(evaluation, title="Evaluation Summary", border_style="grey35"),
-        Panel(stages, title="Stages", border_style="grey35"),
+        _frame(summary, title="Skill Identity"),
+        _frame(evaluation, title="Evaluation Summary"),
+        _frame(stages, title="Stages"),
     ]
     if context.gate_history:
-        panels.append(Panel(gates, title="Gate Results", border_style="grey35"))
+        panels.append(_frame(gates, title="Gate Results"))
     if context.validation.errors:
         panels.append(
-            Panel(
+            _frame(
                 "\n".join(f"- {error}" for error in context.validation.errors),
                 title="Validation Errors",
                 border_style="red",
@@ -523,13 +575,13 @@ def _render_pipeline_report(context: PublishContext) -> None:
     if isinstance(llm_guard_status, dict):
         security_evaluator = Table(
             show_header=True,
-            header_style="grey70",
-            border_style="grey35",
-            box=box.ROUNDED,
+            header_style=THEME.text_muted,
+            border_style=THEME.border_primary,
+            box=_table_box_for_stream(sys.stdout),
             expand=True,
         )
-        security_evaluator.add_column("Signal", style="grey70")
-        security_evaluator.add_column("Value", style="white")
+        security_evaluator.add_column("Signal", style=THEME.text_muted)
+        security_evaluator.add_column("Value", style=THEME.text_body)
         security_evaluator.add_row("Evaluator status", str(llm_guard_status.get("status")))
         security_evaluator.add_row("Score", str(llm_guard_status.get("score")))
         security_evaluator.add_row("Decision", context.security.decision)
@@ -544,19 +596,19 @@ def _render_pipeline_report(context: PublishContext) -> None:
         if context.security.notes:
             security_evaluator.add_row("Notes", "\n".join(context.security.notes))
         border_style = "red" if llm_guard_status.get("status") in {"not_available", "failed"} else "yellow"
-        panels.append(Panel(security_evaluator, title="LLM Guard Evaluator", border_style=border_style))
+        panels.append(_frame(security_evaluator, title="LLM Guard Evaluator", border_style=border_style))
     if context.security.findings:
         findings = Table(
             show_header=True,
-            header_style="grey70",
-            border_style="grey35",
-            box=box.ROUNDED,
+            header_style=THEME.text_muted,
+            border_style=THEME.border_primary,
+            box=_table_box_for_stream(sys.stdout),
             expand=True,
         )
-        findings.add_column("Severity", style="white")
-        findings.add_column("Check", style="grey70")
-        findings.add_column("Field", style="grey70")
-        findings.add_column("Evidence", style="white")
+        findings.add_column("Severity", style=THEME.text_body)
+        findings.add_column("Check", style=THEME.text_muted)
+        findings.add_column("Field", style=THEME.text_muted)
+        findings.add_column("Evidence", style=THEME.text_body)
         for finding in context.security.findings:
             findings.add_row(
                 str(finding.get("severity", "")),
@@ -564,17 +616,17 @@ def _render_pipeline_report(context: PublishContext) -> None:
                 str(finding.get("field", "")),
                 str(finding.get("evidence", "")),
             )
-        panels.append(Panel(findings, title="Security Findings", border_style="red"))
+        panels.append(_frame(findings, title="Security Findings", border_style="red"))
     if context.performance_exam.score is not None or context.performance_exam.notes:
         upskill = Table(
             show_header=True,
-            header_style="grey70",
-            border_style="grey35",
-            box=box.ROUNDED,
+            header_style=THEME.text_muted,
+            border_style=THEME.border_primary,
+            box=_table_box_for_stream(sys.stdout),
             expand=True,
         )
-        upskill.add_column("Signal", style="grey70")
-        upskill.add_column("Value", style="white")
+        upskill.add_column("Signal", style=THEME.text_muted)
+        upskill.add_column("Value", style=THEME.text_body)
         upskill_status = context.metadata.extra.get("upskill_evaluation", {})
         if isinstance(upskill_status, dict):
             upskill.add_row("Evaluator status", str(upskill_status.get("status")))
@@ -598,7 +650,7 @@ def _render_pipeline_report(context: PublishContext) -> None:
             upskill.add_row("Explanation", explanation)
         if context.performance_exam.notes:
             upskill.add_row("Notes", "\n".join(context.performance_exam.notes))
-        panels.append(Panel(upskill, title="Upskill Evaluator", border_style="yellow"))
+        panels.append(_frame(upskill, title="Upskill Evaluator", border_style="yellow"))
     CONSOLE.print(Group(*panels))
 
 
@@ -661,30 +713,30 @@ def _score_bar(score: float | None) -> Text:
     style = "green" if bounded >= 0.8 else "yellow" if bounded >= 0.5 else "red"
     text = Text()
     text.append("█" * filled, style=style)
-    text.append("░" * empty, style="grey35")
-    text.append(f" {bounded:.2f}", style="white")
+    text.append("░" * empty, style=THEME.border_secondary)
+    text.append(f" {bounded:.2f}", style=THEME.text_body)
     return text
 
 
 def _render_bundle(context: PublishContext, bundle_bytes: bytes) -> None:
     table = Table.grid(expand=True, padding=(0, 2))
-    table.add_column(style="grey70", no_wrap=True)
-    table.add_column(style="white")
+    table.add_column(style=THEME.text_muted, no_wrap=True)
+    table.add_column(style=THEME.text_body)
     table.add_row("Path root", str(context.inventory.skill_root))
     table.add_row("Bundle size", f"{len(bundle_bytes)} bytes")
     table.add_row("Registry slug", context.identity.slug)
     table.add_row("Registry version", context.identity.version)
-    CONSOLE.print(Panel(table, title="Bundle", border_style="grey35"))
+    CONSOLE.print(_frame(table, title="Bundle"))
 
 
 def _render_registry_result(result) -> None:
     table = Table.grid(expand=True, padding=(0, 2))
-    table.add_column(style="grey70", no_wrap=True)
-    table.add_column(style="white")
+    table.add_column(style=THEME.text_muted, no_wrap=True)
+    table.add_column(style=THEME.text_body)
     for label, value in _registry_result_lines(result):
         table.add_row(label.title(), value)
     border_style = "green" if 200 <= result.status_code < 300 else "red"
-    CONSOLE.print(Panel(table, title="Registry Result", border_style=border_style))
+    CONSOLE.print(_frame(table, title="Registry Result", border_style=border_style))
 
 
 def _render_existing_slug_block_if_needed(
@@ -701,7 +753,7 @@ def _render_existing_slug_block_if_needed(
 
     if not token:
         CONSOLE.print(
-            Panel(
+            _frame(
                 "Publish blocked: cannot verify slug uniqueness without a read or "
                 "publish token.\n\nSet APTITUDE_READ_TOKEN, REGISTRY_READ_TOKEN, "
                 "or APTITUDE_PUBLISH_TOKEN.",
@@ -719,7 +771,7 @@ def _render_existing_slug_block_if_needed(
         )
     except RegistryLookupUnavailable as exc:
         CONSOLE.print(
-            Panel(
+            _frame(
                 f"Publish blocked: cannot verify whether slug {slug!r} exists.\n\n{exc}",
                 title="Existing Slug Check",
                 border_style="red",
@@ -734,12 +786,12 @@ def _render_existing_slug_block_if_needed(
         return False
 
     table = Table.grid(expand=True, padding=(0, 2))
-    table.add_column(style="grey70", no_wrap=True)
-    table.add_column(style="white")
+    table.add_column(style=THEME.text_muted, no_wrap=True)
+    table.add_column(style=THEME.text_body)
     for label, value in _existing_skill_lines(existing):
         table.add_row(label.title(), value)
     CONSOLE.print(
-        Panel(
+        _frame(
             table,
             title="Existing Skill Found",
             subtitle="Create new skill is blocked; reuse this skill or publish a new version.",
@@ -757,7 +809,7 @@ def _render_relationship_alerts(context: PublishContext) -> None:
     token = _relationship_check_token(_default_publish_token())
     if not token:
         CONSOLE.print(
-            Panel(
+            _frame(
                 "Skipped relationship existence check. Set APTITUDE_READ_TOKEN, "
                 "REGISTRY_READ_TOKEN, or a publish token with read scope.",
                 title="Relationship Alerts",
@@ -773,16 +825,15 @@ def _render_relationship_alerts(context: PublishContext) -> None:
     )
     if not issues:
         CONSOLE.print(
-            Panel(
+            _frame(
                 "All referenced relationship targets were found.",
                 title="Relationship Alerts",
-                border_style="grey35",
             )
         )
         return
 
     CONSOLE.print(
-        Panel(
+        _frame(
             "\n".join(_relationship_alert_lines(issues)),
             title="Relationship Alerts",
             border_style="yellow",
@@ -957,7 +1008,7 @@ def _select(
                 "subtitle": "#d8d8d8",
                 "item": "#b8b8b8",
                 "active": "bold #ffffff",
-                "marker-active": "bold #8fa3ad",
+                "marker-active": f"bold {THEME.accent}",
                 "hint": "#7a7a7a",
                 "detail": "#d8d8d8",
             }
@@ -1038,12 +1089,12 @@ def _activity(label: str):
         yield
         return
     with Progress(
-        SpinnerColumn(style="#8fa3ad"),
+        SpinnerColumn(style=THEME.accent),
         TextColumn("[white]{task.description}"),
         BarColumn(
             bar_width=28,
-            complete_style="#8fa3ad",
-            finished_style="#8fa3ad",
+            complete_style=THEME.accent,
+            finished_style=THEME.accent,
         ),
         transient=True,
         console=Console(stderr=True),

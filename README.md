@@ -22,8 +22,10 @@ Primary commands:
 - `aptitude-publisher menu`
 - `aptitude-publisher inspect /path/to/skill`
 - `aptitude-publisher publish /path/to/skill`
+- `aptitude-publisher admin-batch-upload /path/to/skill-a /path/to/skill-b`
 
 `menu` launches the guided review-first wizard. `inspect` runs the full local pipeline and prints evaluation results without uploading. `publish` runs the same gates, builds the upload bundle, checks registry state when tokens are available, and uploads only when the publish decision allows it.
+`admin-batch-upload` runs the same local gates for multiple skill folders concurrently, uploads each accepted skill with an admin token, and prints only a final summary.
 
 Common publish flags:
 
@@ -77,6 +79,12 @@ Relationship checks and existing-skill checks can also use a read token:
 
 ```bash
 export APTITUDE_READ_TOKEN=your-read-token
+```
+
+Admin batch upload requires an admin-scoped registry token:
+
+```bash
+export APTITUDE_ADMIN_TOKEN=your-admin-token
 ```
 
 ## Packaging And Publishing
@@ -174,6 +182,18 @@ Publish a new version of an existing skill:
 uv run aptitude-publisher publish /path/to/skill --intent publish_version
 ```
 
+Upload multiple skills concurrently as an admin:
+
+```bash
+uv run aptitude-publisher admin-batch-upload \
+  /path/to/skill-a \
+  /path/to/skill-b \
+  --intent create_skill \
+  --concurrency 4
+```
+
+Batch upload suppresses per-skill pipeline reports while scans and uploads run. The CLI prints only a final summary with each skill's status, HTTP result, slug, version, and message.
+
 Override registry identity when the skill metadata needs an explicit local override:
 
 ```bash
@@ -225,6 +245,7 @@ The Upskill command template supports `{skill_path}`, `{skill_file}`, `{artifact
 - weighted publish ranking and block/allow decisions
 - deterministic `tar.zst` bundle creation
 - registry upload with multipart artifact delivery
+- admin batch upload with concurrent skill processing and summary-only output
 - local PyPI build and publish targets
 - GitHub Actions trusted publishing on `v*` tags
 

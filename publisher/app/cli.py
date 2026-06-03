@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 from importlib import metadata as importlib_metadata
 import os
 import sys
@@ -46,6 +48,8 @@ def main(argv: list[str] | None = None) -> int:
         return _run_inspect(args)
     if args.command == "publish":
         return _run_publish(args)
+    if args.command == "admin-batch-upload":
+        return _run_admin_batch_upload(args)
     if args.command == "menu":
         from publisher.app.menu import run_menu
 
@@ -100,6 +104,42 @@ def _build_parser(prog: str = _DEFAULT_PROG) -> argparse.ArgumentParser:
         help="run the full local flow and stop before the API upload",
     )
 
+    batch_parser = subparsers.add_parser(
+        "admin-batch-upload",
+        help="publish multiple skill folders concurrently with an admin token",
+    )
+    batch_parser.add_argument("skill_paths", nargs="+", help="paths to skill folders")
+    _add_batch_shared_arguments(batch_parser)
+    batch_parser.add_argument(
+        "--registry-url",
+        default=_default_registry_url(),
+        help=(
+            "registry base URL; defaults to APTITUDE_REGISTRY_URL, "
+            "APTITUDE_SERVER_BASE_URL, or local APP_PORT"
+        ),
+    )
+    batch_parser.add_argument(
+        "--admin-token",
+        "--token",
+        dest="admin_token",
+        default=_default_admin_token(),
+        help=(
+            "registry admin token; defaults to APTITUDE_ADMIN_TOKEN, "
+            "APTITUDE_REGISTRY_ADMIN_TOKEN, or REGISTRY_ADMIN_TOKEN"
+        ),
+    )
+    batch_parser.add_argument(
+        "--concurrency",
+        type=int,
+        default=4,
+        help="number of skill uploads to run concurrently; default: 4",
+    )
+    batch_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="run every local flow and stop before API uploads",
+    )
+
     subparsers.add_parser(
         "menu",
         help="open an interactive menu for inspect, dry-run, or publish",
@@ -111,6 +151,14 @@ def _add_shared_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("skill_path", help="path to the skill folder")
     parser.add_argument("--slug", help="override the skill slug for registry publish")
     parser.add_argument("--version", help="override the semantic version for this publish")
+    _add_publish_metadata_arguments(parser)
+
+
+def _add_batch_shared_arguments(parser: argparse.ArgumentParser) -> None:
+    _add_publish_metadata_arguments(parser)
+
+
+def _add_publish_metadata_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--intent",
         choices=("create_skill", "publish_version"),
@@ -199,12 +247,242 @@ def _run_publish(args: argparse.Namespace) -> int:
     return 0 if 200 <= result.status_code < 300 else 1
 
 
-def _run_pipeline(args: argparse.Namespace):
+@dataclass(frozen=True, slots=True)
+class BatchUploadResult:
+    """One skill result for admin batch upload summary output."""
+
+    index: int
+    path: str
+    slug: str | None = None
+    version: str | None = None
+    status: str = "failed"
+    http_status: int | None = None
+    message: str | None = None
+
+
+def _run_admin_batch_upload(args: argparse.Namespace) -> int:
+    if not args.dry_run and not args.admin_token:
+        print(
+            "\nMissing admin token. Pass --admin-token or set APTITUDE_ADMIN_TOKEN, "
+            "APTITUDE_REGISTRY_ADMIN_TOKEN, or REGISTRY_ADMIN_TOKEN."
+        )
+        return 1
+
+    concurrency = max(1, min(args.concurrency, len(args.skill_paths)))
+
+    results: list[BatchUploadResult | None] = [None] * len(args.skill_paths)
+    with ThreadPoolExecutor(max_workers=concurrency) as executor:
+        futures = {
+            executor.submit(_upload_one_batch_skill, index, path, args): index
+            for index, path in enumerate(args.skill_paths, start=1)
+        }
+        for future in as_completed(futures):
+            index = futures[future]
+            try:
+                result = future.result()
+            except Exception as exc:  # pragma: no cover - defensive boundary
+                result = BatchUploadResult(
+                    index=index,
+                    path=args.skill_paths[index - 1],
+                    status="failed",
+                    message=str(exc),
+                )
+            results[index - 1] = result
+
+    completed = [result for result in results if result is not None]
+    _print_batch_summary(
+        completed,
+        requested_count=len(args.skill_paths),
+        concurrency=concurrency,
+        dry_run=args.dry_run,
+    )
+    if not completed:
+        return 1
+    return 0 if all(_batch_result_succeeded(result) for result in completed) else 1
+
+
+def _upload_one_batch_skill(
+    index: int,
+    skill_path: str,
+    args: argparse.Namespace,
+) -> BatchUploadResult:
+    try:
+        context = _run_pipeline(args, skill_path=skill_path)
+    except Exception as exc:
+        return BatchUploadResult(
+            index=index,
+            path=skill_path,
+            status="pipeline_failed",
+            message=str(exc),
+        )
+
+    slug = context.identity.slug
+    version = context.identity.version
+    if (
+        not _publish_payload_ready(context)
+        or context.ranking.publish_decision == "block"
+    ):
+        return BatchUploadResult(
+            index=index,
+            path=skill_path,
+            slug=slug,
+            version=version,
+            status="blocked",
+            message=_batch_block_message(context),
+        )
+
+    if _batch_existing_slug_blocked(args=args, context=context):
+        return BatchUploadResult(
+            index=index,
+            path=skill_path,
+            slug=slug,
+            version=version,
+            status="blocked",
+            message="slug already exists",
+        )
+
+    try:
+        bundle_bytes = build_bundle_bytes(context)
+    except RuntimeError as exc:
+        return BatchUploadResult(
+            index=index,
+            path=skill_path,
+            slug=slug,
+            version=version,
+            status="bundle_failed",
+            message=str(exc),
+        )
+
+    if args.dry_run:
+        return BatchUploadResult(
+            index=index,
+            path=skill_path,
+            slug=slug,
+            version=version,
+            status="ready",
+            message=f"bundle {len(bundle_bytes)} bytes",
+        )
+
+    result = publish_to_registry(
+        registry_url=args.registry_url,
+        token=args.admin_token,
+        context=context,
+        bundle_bytes=bundle_bytes,
+    )
+    if 200 <= result.status_code < 300:
+        return BatchUploadResult(
+            index=index,
+            path=skill_path,
+            slug=slug,
+            version=version,
+            status="uploaded",
+            http_status=result.status_code,
+            message=_batch_success_message(result),
+        )
+    return BatchUploadResult(
+        index=index,
+        path=skill_path,
+        slug=slug,
+        version=version,
+        status="upload_failed",
+        http_status=result.status_code,
+        message=_batch_failure_message(result),
+    )
+
+
+def _batch_existing_slug_blocked(*, args: argparse.Namespace, context) -> bool:
+    if context.identity.intent != "create_skill" or not context.identity.slug:
+        return False
+    if not args.admin_token:
+        return False
+    try:
+        existing = get_existing_skill(
+            registry_url=args.registry_url,
+            token=args.admin_token,
+            slug=context.identity.slug,
+        )
+    except RegistryLookupUnavailable:
+        return True
+    return _should_block_existing_slug(
+        intent=context.identity.intent,
+        existing_skill=existing,
+    )
+
+
+def _batch_block_message(context) -> str:
+    failed_gates = [gate for gate in context.gate_history if not gate.passed]
+    if failed_gates:
+        return "; ".join(
+            f"{gate.gate_name}: {gate.explanation or 'failed'}" for gate in failed_gates
+        )
+    return f"publish decision {context.ranking.publish_decision or 'not ready'}"
+
+
+def _batch_success_message(result: RegistryPublishResult) -> str:
+    if result.request_id:
+        return f"request {result.request_id}"
+    return "accepted"
+
+
+def _batch_failure_message(result: RegistryPublishResult) -> str:
+    body = result.body if isinstance(result.body, dict) else {}
+    error = body.get("error")
+    if isinstance(error, dict):
+        message = error.get("message")
+        if message is not None:
+            return str(message)
+    message = body.get("message")
+    if message is not None:
+        return str(message)
+    return "registry upload failed"
+
+
+def _print_batch_summary(
+    results: list[BatchUploadResult],
+    *,
+    requested_count: int,
+    concurrency: int,
+    dry_run: bool,
+) -> None:
+    print(_separator())
+    print("Admin Batch Upload Summary")
+    print(_separator())
+    print(f"skills       {requested_count}")
+    print(f"concurrency  {concurrency}")
+    print(f"mode         {'dry-run' if dry_run else 'upload'}")
+    print()
+    header = f"{'#':<4} {'status':<15} {'http':<5} {'slug':<24} {'version':<12} message"
+    print(header)
+    print("-" * len(header))
+    for result in results:
+        http_status = "" if result.http_status is None else str(result.http_status)
+        slug = result.slug or "-"
+        version = result.version or "-"
+        message = result.message or result.path
+        print(
+            f"{result.index:<4} {result.status:<15} {http_status:<5} "
+            f"{slug:<24} {version:<12} {message}"
+        )
+
+    counts: dict[str, int] = {}
+    for result in results:
+        counts[result.status] = counts.get(result.status, 0) + 1
+    print("\nCounts")
+    for status, count in sorted(counts.items()):
+        print(f"{status:<15} {count}")
+
+
+def _batch_result_succeeded(result: BatchUploadResult) -> bool:
+    return result.status in {"uploaded", "ready"}
+
+
+def _run_pipeline(args: argparse.Namespace, *, skill_path: str | None = None):
     pipeline = PublisherPipeline()
+    resolved_skill_path = skill_path or args.skill_path
     context = pipeline.create_context(
-        file_path=str(Path(args.skill_path).resolve()),
-        slug_override=args.slug,
-        version_override=args.version,
+        file_path=str(Path(resolved_skill_path).resolve()),
+        slug_override=getattr(args, "slug", None),
+        version_override=getattr(args, "version", None),
         intent_override=args.intent,
         trust_tier=args.trust_tier,
         namespace=args.namespace,
@@ -577,6 +855,14 @@ def _default_publish_token() -> str | None:
         os.environ.get("APTITUDE_PUBLISH_TOKEN")
         or os.environ.get("APTITUDE_INTEGRATION_PUBLISH_TOKEN")
         or os.environ.get("PUBLISH_TOKEN")
+    )
+
+
+def _default_admin_token() -> str | None:
+    return (
+        os.environ.get("APTITUDE_ADMIN_TOKEN")
+        or os.environ.get("APTITUDE_REGISTRY_ADMIN_TOKEN")
+        or os.environ.get("REGISTRY_ADMIN_TOKEN")
     )
 
 

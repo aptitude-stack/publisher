@@ -5,7 +5,12 @@ import tomllib
 
 import pytest
 
-from publisher.app.cli import _build_parser, _publisher_cli_version, main
+from publisher.app.cli import (
+    BatchUploadResult,
+    _build_parser,
+    _publisher_cli_version,
+    main,
+)
 
 
 def test_publisher_cli_version_is_available() -> None:
@@ -42,6 +47,78 @@ def test_root_help_still_prints_cli_help(capsys: pytest.CaptureFixture[str]) -> 
 
     assert exc_info.value.code == 0
     assert "usage: aptitude-publisher" in capsys.readouterr().out
+
+
+def test_admin_batch_upload_parser_uses_admin_token_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("APTITUDE_ADMIN_TOKEN", "admin-token")
+
+    parser = _build_parser()
+    args = parser.parse_args(["admin-batch-upload", "skills/a", "skills/b"])
+
+    assert args.command == "admin-batch-upload"
+    assert args.skill_paths == ["skills/a", "skills/b"]
+    assert args.admin_token == "admin-token"
+    assert args.concurrency == 4
+
+
+def test_admin_batch_upload_rejects_global_identity_overrides() -> None:
+    parser = _build_parser()
+
+    with pytest.raises(SystemExit):
+        parser.parse_args(["admin-batch-upload", "skills/a", "--slug", "same-slug"])
+
+
+def test_admin_batch_upload_requires_token_for_upload(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr("publisher.app.cli._load_local_env_defaults", lambda: None)
+    monkeypatch.delenv("APTITUDE_ADMIN_TOKEN", raising=False)
+    monkeypatch.delenv("APTITUDE_REGISTRY_ADMIN_TOKEN", raising=False)
+    monkeypatch.delenv("REGISTRY_ADMIN_TOKEN", raising=False)
+
+    assert main(["admin-batch-upload", "skills/a"]) == 1
+
+    output = capsys.readouterr().out
+    assert "Missing admin token" in output
+
+
+def test_admin_batch_upload_prints_summary_only(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr("publisher.app.cli._load_local_env_defaults", lambda: None)
+    monkeypatch.setenv("APTITUDE_ADMIN_TOKEN", "admin-token")
+
+    def fake_upload_one(index, skill_path, args):
+        return BatchUploadResult(
+            index=index,
+            path=skill_path,
+            slug=f"skill-{index}",
+            version="0.1.0",
+            status="uploaded",
+            http_status=201,
+            message="accepted",
+        )
+
+    monkeypatch.setattr("publisher.app.cli._upload_one_batch_skill", fake_upload_one)
+
+    assert (
+        main(["admin-batch-upload", "skills/a", "skills/b", "--concurrency", "8"])
+        == 0
+    )
+
+    output = capsys.readouterr().out
+    assert "Admin Batch Upload" in output
+    assert "Summary" in output
+    assert "Running local scans" not in output
+    assert "skill-1" in output
+    assert "skill-2" in output
+    assert "uploaded" in output
+    assert "Evaluation Summary" not in output
+    assert "Stages" not in output
 
 
 def _pyproject_version() -> str:
