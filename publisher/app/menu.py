@@ -20,15 +20,22 @@ from publisher.artifacts.bundle import build_bundle_bytes
 from publisher.app.cli import (
     _default_publish_token,
     _default_registry_url,
+    _existing_skill_lines,
     _load_local_env_defaults,
     _publisher_cli_version,
     _registry_result_lines,
     _relationship_alert_lines,
     _relationship_check_token,
+    _should_block_existing_slug,
 )
 from publisher.app.pipeline import PublisherPipeline
 from publisher.domain.models import PublishContext
-from publisher.registry.client import check_relationship_references, publish_to_registry
+from publisher.registry.client import (
+    RegistryLookupUnavailable,
+    check_relationship_references,
+    get_existing_skill,
+    publish_to_registry,
+)
 
 try:
     import termios
@@ -343,6 +350,11 @@ def _execute_plan(plan: PublishPlan) -> int:
         )
         return 1
 
+    publish_token = _default_publish_token()
+    lookup_token = _relationship_check_token(publish_token)
+    if _render_existing_slug_block_if_needed(context=context, token=lookup_token):
+        return 1
+
     try:
         with _activity("Building compressed bundle"):
             bundle_bytes = build_bundle_bytes(context)
@@ -362,8 +374,7 @@ def _execute_plan(plan: PublishPlan) -> int:
         CONSOLE.print("[grey70]Upload cancelled.[/grey70]")
         return 0
 
-    token = _default_publish_token()
-    if not token:
+    if not publish_token:
         CONSOLE.print(
             Panel(
                 "Set APTITUDE_PUBLISH_TOKEN or PUBLISH_TOKEN before publishing.",
@@ -376,7 +387,7 @@ def _execute_plan(plan: PublishPlan) -> int:
     with _activity("Uploading bundle to registry"):
         result = publish_to_registry(
             registry_url=_default_registry_url(),
-            token=token,
+            token=publish_token,
             context=context,
             bundle_bytes=bundle_bytes,
         )
@@ -674,6 +685,68 @@ def _render_registry_result(result) -> None:
         table.add_row(label.title(), value)
     border_style = "green" if 200 <= result.status_code < 300 else "red"
     CONSOLE.print(Panel(table, title="Registry Result", border_style=border_style))
+
+
+def _render_existing_slug_block_if_needed(
+    *,
+    context: PublishContext,
+    token: str | None,
+) -> bool:
+    if context.identity.intent != "create_skill":
+        return False
+
+    slug = context.identity.slug
+    if not slug:
+        return False
+
+    if not token:
+        CONSOLE.print(
+            Panel(
+                "Publish blocked: cannot verify slug uniqueness without a read or "
+                "publish token.\n\nSet APTITUDE_READ_TOKEN, REGISTRY_READ_TOKEN, "
+                "or APTITUDE_PUBLISH_TOKEN.",
+                title="Existing Slug Check",
+                border_style="red",
+            )
+        )
+        return True
+
+    try:
+        existing = get_existing_skill(
+            registry_url=_default_registry_url(),
+            token=token,
+            slug=slug,
+        )
+    except RegistryLookupUnavailable as exc:
+        CONSOLE.print(
+            Panel(
+                f"Publish blocked: cannot verify whether slug {slug!r} exists.\n\n{exc}",
+                title="Existing Slug Check",
+                border_style="red",
+            )
+        )
+        return True
+
+    if not _should_block_existing_slug(
+        intent=context.identity.intent,
+        existing_skill=existing,
+    ):
+        return False
+
+    table = Table.grid(expand=True, padding=(0, 2))
+    table.add_column(style="grey70", no_wrap=True)
+    table.add_column(style="white")
+    for label, value in _existing_skill_lines(existing):
+        table.add_row(label.title(), value)
+    CONSOLE.print(
+        Panel(
+            table,
+            title="Existing Skill Found",
+            subtitle="Create new skill is blocked; reuse this skill or publish a new version.",
+            border_style="red",
+        )
+    )
+    return True
 
 
 def _render_relationship_alerts(context: PublishContext) -> None:

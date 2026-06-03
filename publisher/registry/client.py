@@ -30,6 +30,29 @@ class RelationshipCheckIssue:
     message: str
 
 
+@dataclass(frozen=True, slots=True)
+class ExistingSkillVersion:
+    """One visible registry version for an existing skill slug."""
+
+    version: str
+    lifecycle_status: str | None = None
+    review_state: str | None = None
+    promotion_channel: str | None = None
+    is_current_default: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class ExistingSkill:
+    """Visible registry entry for an existing skill slug."""
+
+    slug: str
+    versions: tuple[ExistingSkillVersion, ...]
+
+
+class RegistryLookupUnavailable(RuntimeError):
+    """Raised when the publisher cannot verify registry state."""
+
+
 def build_publish_metadata(context: PublishContext) -> dict[str, object]:
     """Build the live metadata JSON expected by the registry API."""
     return {
@@ -39,6 +62,49 @@ def build_publish_metadata(context: PublishContext) -> dict[str, object]:
         "governance": context.delivery_payload.governance,
         "relationships": context.delivery_payload.relationships,
     }
+
+
+def get_existing_skill(
+    *,
+    registry_url: str,
+    token: str,
+    slug: str,
+    timeout: int = 10,
+) -> ExistingSkill | None:
+    """Return a visible registry skill entry, or None when the slug is absent."""
+    url = f"{registry_url.rstrip('/')}/skills/{slug}"
+    try:
+        payload = _get_json(url=url, token=token, timeout=timeout)
+    except error.HTTPError as exc:
+        if exc.code == 404:
+            return None
+        raise RegistryLookupUnavailable(f"registry returned HTTP {exc.code}") from exc
+    except OSError as exc:
+        raise RegistryLookupUnavailable(str(exc)) from exc
+
+    payload_slug = payload.get("slug")
+    slug_value = payload_slug if isinstance(payload_slug, str) and payload_slug else slug
+    versions = payload.get("versions")
+    if not isinstance(versions, list):
+        return ExistingSkill(slug=slug_value, versions=())
+
+    parsed_versions: list[ExistingSkillVersion] = []
+    for item in versions:
+        if not isinstance(item, dict):
+            continue
+        version = item.get("version")
+        if not isinstance(version, str) or not version:
+            continue
+        parsed_versions.append(
+            ExistingSkillVersion(
+                version=version,
+                lifecycle_status=_optional_string(item.get("lifecycle_status")),
+                review_state=_optional_string(item.get("review_state")),
+                promotion_channel=_optional_string(item.get("promotion_channel")),
+                is_current_default=item.get("is_current_default") is True,
+            )
+        )
+    return ExistingSkill(slug=slug_value, versions=tuple(parsed_versions))
 
 
 def check_relationship_references(
@@ -192,6 +258,10 @@ def _get_json(*, url: str, token: str, timeout: int) -> dict[str, object]:
     with request.urlopen(http_request, timeout=timeout) as response:
         payload = json.loads(response.read().decode("utf-8"))
     return payload if isinstance(payload, dict) else {}
+
+
+def _optional_string(value: object) -> str | None:
+    return value if isinstance(value, str) and value else None
 
 
 def _unavailable_issue(

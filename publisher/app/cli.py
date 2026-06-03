@@ -12,8 +12,11 @@ from pathlib import Path
 from publisher.artifacts.bundle import build_bundle_bytes
 from publisher.app.pipeline import PublisherPipeline
 from publisher.registry.client import (
+    ExistingSkill,
+    RegistryLookupUnavailable,
     RelationshipCheckIssue,
     check_relationship_references,
+    get_existing_skill,
     publish_to_registry,
 )
 
@@ -136,6 +139,20 @@ def _run_publish(args: argparse.Namespace) -> int:
         _print_gate_failures(context)
         return 1
 
+    if not args.dry_run and not args.token:
+        print(
+            "\nMissing publish token. Pass --token or set APTITUDE_PUBLISH_TOKEN "
+            "or PUBLISH_TOKEN."
+        )
+        return 1
+
+    if not args.dry_run and _print_existing_slug_block_if_needed(
+        registry_url=args.registry_url,
+        token=_relationship_check_token(args.token),
+        context=context,
+    ):
+        return 1
+
     _print_relationship_alerts(
         registry_url=args.registry_url,
         token=_relationship_check_token(args.token),
@@ -159,13 +176,6 @@ def _run_publish(args: argparse.Namespace) -> int:
     if args.dry_run:
         print("\nDry run enabled; upload skipped.")
         return 0
-
-    if not args.token:
-        print(
-            "\nMissing publish token. Pass --token or set APTITUDE_PUBLISH_TOKEN "
-            "or PUBLISH_TOKEN."
-        )
-        return 1
 
     result = publish_to_registry(
         registry_url=args.registry_url,
@@ -296,6 +306,93 @@ def _registry_result_lines(result) -> list[tuple[str, str]]:
     if message is not None:
         lines.append(("message", str(message)))
     return lines
+
+
+def _print_existing_slug_block_if_needed(
+    *,
+    registry_url: str,
+    token: str | None,
+    context,
+) -> bool:
+    intent = context.identity.intent
+    if intent != "create_skill":
+        return False
+
+    slug = context.identity.slug
+    if not slug:
+        return False
+
+    print("\n" + _separator())
+    print("Existing Slug Check")
+    print(_separator())
+    if not token:
+        print(
+            "Publish blocked: cannot verify slug uniqueness without a read or publish token."
+        )
+        print(
+            "Set APTITUDE_READ_TOKEN, REGISTRY_READ_TOKEN, or APTITUDE_PUBLISH_TOKEN."
+        )
+        return True
+
+    try:
+        existing = get_existing_skill(
+            registry_url=registry_url,
+            token=token,
+            slug=slug,
+        )
+    except RegistryLookupUnavailable as exc:
+        print(f"Publish blocked: cannot verify whether slug {slug!r} exists.")
+        print(f"reason         {exc}")
+        return True
+
+    if not _should_block_existing_slug(intent=intent, existing_skill=existing):
+        print(f"slug           {slug}")
+        print("status         available")
+        return False
+
+    print("Publish blocked: this slug already exists in the registry.")
+    for label, value in _existing_skill_lines(existing):
+        print(f"{label:<14} {value}")
+    return True
+
+
+def _should_block_existing_slug(
+    *,
+    intent: str | None,
+    existing_skill: ExistingSkill | None,
+) -> bool:
+    return intent == "create_skill" and existing_skill is not None
+
+
+def _existing_skill_lines(existing_skill: ExistingSkill) -> list[tuple[str, str]]:
+    lines = [("slug", existing_skill.slug)]
+    if not existing_skill.versions:
+        lines.append(("versions", "none visible"))
+    for version in existing_skill.versions:
+        details = _existing_skill_version_details(version)
+        value = version.version if not details else f"{version.version} {details}"
+        lines.append(("version", value))
+    lines.append(
+        (
+            "reuse",
+            "Use publish_version for a new version, or depend on the existing skill.",
+        )
+    )
+    return lines
+
+
+def _existing_skill_version_details(version) -> str:
+    details: list[str] = []
+    if version.is_current_default:
+        details.append("current default")
+    for value in (
+        version.lifecycle_status,
+        version.review_state,
+        version.promotion_channel,
+    ):
+        if value:
+            details.append(value)
+    return ", ".join(details)
 
 
 def _registry_error_detail_lines(error: dict[object, object]) -> list[tuple[str, str]]:
