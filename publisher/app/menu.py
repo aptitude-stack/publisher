@@ -149,7 +149,9 @@ def run_menu() -> int:
 
             try:
                 plan = _build_publish_plan(action)
+                _print_step_separator()
                 _render_plan(plan)
+                _print_step_separator()
                 if not _confirm("Run this workflow?", default=True, allow_back=True):
                     CONSOLE.print("[grey70]Workflow cancelled.[/grey70]")
                     continue
@@ -163,7 +165,9 @@ def run_menu() -> int:
                         break
 
                     plan = _build_publish_plan("publish")
+                    _print_step_separator()
                     _render_plan(plan)
+                    _print_step_separator()
                     if not _confirm("Run this workflow?", default=True, allow_back=True):
                         CONSOLE.print("[grey70]Workflow cancelled.[/grey70]")
                         break
@@ -185,6 +189,22 @@ def _render_header() -> None:
     )
     CONSOLE.print("─" * CONSOLE.width, style=THEME.border_secondary)
     CONSOLE.print()
+
+
+def _render_step_separator(width: int, stream: object = sys.stdout) -> str:
+    """Render the shared separator used between wizard steps."""
+
+    glyph = "─" if _stream_supports_text(stream, "─") else "-"
+    return glyph * max(1, width)
+
+
+def _print_step_separator() -> None:
+    """Print one blank-line-separated divider between wizard steps."""
+
+    CONSOLE.file.write(f"\n{_render_step_separator(CONSOLE.size.width, sys.stdout)}\n\n")
+    flush = getattr(CONSOLE.file, "flush", None)
+    if callable(flush):
+        flush()
 
 
 def _panel_box_for_stream(stream: object) -> box.Box:
@@ -250,6 +270,7 @@ def _render_help() -> None:
 
 def _build_publish_plan(action: Action) -> PublishPlan:
     skills = _discover_skills(Path.cwd())
+    _print_step_separator()
     skill = _select_skill(skills)
     if skill is None:
         skill_path = _prompt_path("Skill folder")
@@ -259,6 +280,7 @@ def _build_publish_plan(action: Action) -> PublishPlan:
 
     default_intent = _normalize_intent(skill.intent if skill is not None else None)
 
+    _print_step_separator()
     intent = _select(
         "Publish intent",
         [
@@ -272,6 +294,7 @@ def _build_publish_plan(action: Action) -> PublishPlan:
         },
         allow_back=True,
     )
+    _print_step_separator()
     scan_profile = _select(
         "Inspection depth",
         [
@@ -355,6 +378,7 @@ def _select_skill(skills: list[MenuSkill]) -> MenuSkill | None:
     options: list[tuple[str, MenuSkill | None]] = [
         (f"{skill.name} ({skill.version})", skill) for skill in skills
     ]
+    _print_step_separator()
     return _select(
         "Local skill",
         options,
@@ -651,7 +675,20 @@ def _render_pipeline_report(context: PublishContext) -> None:
         if context.performance_exam.notes:
             upskill.add_row("Notes", "\n".join(context.performance_exam.notes))
         panels.append(_frame(upskill, title="Upskill Evaluator", border_style="yellow"))
-    CONSOLE.print(Group(*panels))
+    CONSOLE.print(Group(*_with_phase_separators(panels)))
+
+
+def _with_phase_separators(panels: Sequence[Panel]) -> list[Any]:
+    separated: list[Any] = []
+    separator = Text(
+        _render_step_separator(CONSOLE.size.width, sys.stdout),
+        style=THEME.border_secondary,
+    )
+    for index, panel in enumerate(panels):
+        if index:
+            separated.append(separator)
+        separated.append(panel)
+    return separated
 
 
 def _upskill_explanation(context: PublishContext) -> str:
