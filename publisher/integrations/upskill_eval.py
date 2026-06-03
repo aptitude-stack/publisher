@@ -54,7 +54,7 @@ def run_upskill_evaluation(*, skill_root: Path, artifacts_dir: Path) -> UpskillE
     _reset_artifact_dir(upskill_dir)
     upskill_dir.mkdir(parents=True, exist_ok=True)
 
-    direct_result = _run_direct_openai_compatible_eval(skill_root=skill_root)
+    direct_result = _run_direct_openai_compatible_eval(skill_root=skill_root, artifact_dir=upskill_dir)
     if direct_result is not None:
         return direct_result
 
@@ -144,7 +144,7 @@ def _reset_artifact_dir(path: Path) -> None:
             child.unlink(missing_ok=True)
 
 
-def _run_direct_openai_compatible_eval(*, skill_root: Path) -> UpskillEvaluation | None:
+def _run_direct_openai_compatible_eval(*, skill_root: Path, artifact_dir: Path) -> UpskillEvaluation | None:
     """Run Upskill through its Python API when a custom OpenAI-compatible key is needed."""
     base_url = os.environ.get("UPSKILL_BASE_URL")
     api_key = (
@@ -159,7 +159,6 @@ def _run_direct_openai_compatible_eval(*, skill_root: Path) -> UpskillEvaluation
         return None
 
     try:
-        from upskill.evaluate import evaluate_skill
         from upskill.models import Skill, TestCase
     except ImportError as exc:
         return UpskillEvaluation(status="not_available", reason=str(exc))
@@ -181,9 +180,9 @@ def _run_direct_openai_compatible_eval(*, skill_root: Path) -> UpskillEvaluation
 
     try:
         result = asyncio.run(
-            evaluate_skill(
-                skill,
-                test_cases,
+            _evaluate_direct_skill(
+                skill=skill,
+                test_cases=test_cases,
                 model=model_name,
                 provider=provider,
                 base_url=base_url,
@@ -207,6 +206,21 @@ def _run_direct_openai_compatible_eval(*, skill_root: Path) -> UpskillEvaluation
         token_delta=token_delta,
         baseline_avg_tokens=baseline_avg_tokens,
     )
+    if _direct_result_looks_empty_provider_failure(
+        test_case_count=len(test_cases),
+        baseline_avg_tokens=baseline_avg_tokens,
+        skilled_avg_tokens=skilled_avg_tokens,
+        baseline_success_rate=result.baseline_success_rate,
+        skilled_success_rate=result.with_skill_success_rate,
+    ):
+        return UpskillEvaluation(
+            status="failed",
+            artifact_dir=str(artifact_dir),
+            reason=(
+                "upskill produced zero-token failing results; provider calls likely failed "
+                "or returned no usable responses"
+            ),
+        )
 
     return UpskillEvaluation(
         status="scored",
@@ -221,6 +235,224 @@ def _run_direct_openai_compatible_eval(*, skill_root: Path) -> UpskillEvaluation
         token_delta=token_delta,
         models_tested=[result.model],
         command=["upskill-python-api", str(skill_root)],
+        artifact_dir=str(artifact_dir),
+    )
+
+
+def _direct_result_looks_empty_provider_failure(
+    *,
+    test_case_count: int,
+    baseline_avg_tokens: int | None,
+    skilled_avg_tokens: int | None,
+    baseline_success_rate: float,
+    skilled_success_rate: float,
+) -> bool:
+    if test_case_count <= 0:
+        return False
+    return (
+        baseline_avg_tokens == 0
+        and skilled_avg_tokens == 0
+        and baseline_success_rate == 0.0
+        and skilled_success_rate == 0.0
+    )
+
+
+async def _evaluate_direct_skill(
+    *,
+    skill: Any,
+    test_cases: list[Any],
+    model: str | None,
+    provider: str,
+    base_url: str | None,
+    api_key: str | None,
+    run_baseline: bool,
+) -> Any:
+    """Run the direct evaluator while explicitly closing async provider clients."""
+    from upskill.config import Config
+    from upskill.models import EvalResults
+
+    config = Config.load()
+    model_name = model or config.effective_eval_model
+    results = EvalResults(skill_name=skill.name, model=model_name)
+
+    for test_case in test_cases:
+        results.with_skill_results.append(
+            await _run_direct_test(
+                test_case=test_case,
+                skill=skill,
+                model=model_name,
+                provider=provider,
+                base_url=base_url,
+                api_key=api_key,
+            )
+        )
+    _populate_direct_metrics(results, test_cases, prefix="with_skill")
+
+    if run_baseline:
+        for test_case in test_cases:
+            results.baseline_results.append(
+                await _run_direct_test(
+                    test_case=test_case,
+                    skill=None,
+                    model=model_name,
+                    provider=provider,
+                    base_url=base_url,
+                    api_key=api_key,
+                )
+            )
+        _populate_direct_metrics(results, test_cases, prefix="baseline")
+
+    return results
+
+
+async def _run_direct_test(
+    *,
+    test_case: Any,
+    skill: Any | None,
+    model: str,
+    provider: str,
+    base_url: str | None,
+    api_key: str | None,
+) -> Any:
+    from upskill.models import TestResult
+
+    system = "You are a helpful AI assistant."
+    if skill:
+        system += f"\n\n## Skill: {skill.name}\n\n{skill.body}"
+
+    user_content = test_case.input
+    if test_case.context and "files" in test_case.context:
+        for filename, content in test_case.context["files"].items():
+            user_content += f"\n\n```{filename}\n{content}\n```"
+
+    try:
+        if provider == "openai":
+            output, tokens_used = await _run_openai_chat(
+                model=model,
+                system=system,
+                user_content=user_content,
+                base_url=base_url,
+                api_key=api_key,
+            )
+        else:
+            output, tokens_used = await _run_anthropic_chat(
+                model=model,
+                system=system,
+                user_content=user_content,
+                base_url=base_url,
+                api_key=api_key,
+            )
+        return TestResult(
+            test_case=test_case,
+            success=_check_expected(output, test_case.expected),
+            output=output,
+            tokens_used=tokens_used,
+            turns=1,
+        )
+    except Exception as exc:  # noqa: BLE001 - provider errors become test failures.
+        return TestResult(test_case=test_case, success=False, error=str(exc))
+
+
+async def _run_openai_chat(
+    *,
+    model: str,
+    system: str,
+    user_content: str,
+    base_url: str | None,
+    api_key: str | None,
+) -> tuple[str, int]:
+    from openai import AsyncOpenAI
+
+    if base_url and not api_key:
+        api_key = "sk-no-key-required"
+
+    async with AsyncOpenAI(base_url=base_url, api_key=api_key) as client:
+        response = await client.chat.completions.create(
+            model=model,
+            max_tokens=2048,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user_content},
+            ],
+        )
+    output = response.choices[0].message.content or ""
+    tokens_used = (
+        response.usage.prompt_tokens + response.usage.completion_tokens
+        if response.usage
+        else 0
+    )
+    return output, tokens_used
+
+
+async def _run_anthropic_chat(
+    *,
+    model: str,
+    system: str,
+    user_content: str,
+    base_url: str | None,
+    api_key: str | None,
+) -> tuple[str, int]:
+    from anthropic import AsyncAnthropic
+
+    kwargs = {}
+    if base_url:
+        kwargs["base_url"] = base_url
+    if api_key:
+        kwargs["api_key"] = api_key
+
+    async with AsyncAnthropic(**kwargs) as client:
+        response = await client.messages.create(
+            model=model,
+            max_tokens=4096,
+            system=system,
+            messages=[{"role": "user", "content": user_content}],
+        )
+    output = _extract_anthropic_text(response.content)
+    tokens_used = response.usage.input_tokens + response.usage.output_tokens
+    return output, tokens_used
+
+
+def _extract_anthropic_text(content: list[Any]) -> str:
+    texts: list[str] = []
+    for block in content:
+        if hasattr(block, "text"):
+            texts.append(block.text)
+        elif hasattr(block, "thinking"):
+            texts.append(block.thinking)
+        elif isinstance(block, dict):
+            if block.get("type") == "text":
+                texts.append(str(block.get("text", "")))
+            elif block.get("type") == "thinking":
+                texts.append(str(block.get("thinking", "")))
+    return "\n".join(texts)
+
+
+def _check_expected(output: str, expected: dict[str, Any] | None) -> bool:
+    if not expected:
+        return True
+    contains = expected.get("contains")
+    if contains is not None:
+        return str(contains).lower() in output.lower()
+    return True
+
+
+def _populate_direct_metrics(results: Any, test_cases: list[Any], *, prefix: str) -> None:
+    result_items = getattr(results, f"{prefix}_results")
+    successes = sum(1 for result in result_items if result.success)
+    setattr(
+        results,
+        f"{prefix}_success_rate",
+        successes / len(test_cases) if test_cases else 0,
+    )
+    setattr(
+        results,
+        f"{prefix}_total_tokens",
+        sum(result.tokens_used for result in result_items),
+    )
+    setattr(
+        results,
+        f"{prefix}_avg_turns",
+        sum(result.turns for result in result_items) / len(test_cases) if test_cases else 0,
     )
 
 

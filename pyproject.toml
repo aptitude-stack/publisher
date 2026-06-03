@@ -3,7 +3,7 @@ name = "aptitude-publisher"
 version = "0.1.0"
 description = "Publisher CLI for evaluating and publishing Aptitude skills"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.12,<3.13"
 keywords = [
     "ai",
     "cli",
@@ -17,13 +17,11 @@ classifiers = [
     "Intended Audience :: Developers",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.13",
-    "Programming Language :: Python :: 3.14",
     "Topic :: Software Development",
     "Topic :: Utilities",
 ]
 dependencies = [
-    "garak",
+    "llm-guard>=0.3.16,<0.4",
     "prompt-toolkit>=3.0",
     "PyYAML>=6.0",
     "rich>=13.0",

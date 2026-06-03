@@ -160,7 +160,7 @@ def _render_help() -> None:
         ("Identity", "Derives the registry slug, version, namespace, and publish intent."),
         ("Metadata", "Collects public skill facts and fills generated estimates."),
         ("Validation", "Checks the skill against the Anthropic SKILL.md contract."),
-        ("Security", "Uses NVIDIA Garak as the authoritative security gate."),
+        ("Security", "Uses LLM Guard as the authoritative skill security gate."),
         ("Performance", "Uses Upskill as the source for performance and token efficiency."),
         ("Ranking", "Combines gate outputs into the final publish decision."),
         ("Compression", "Builds the immutable bundle that the client later installs."),
@@ -231,12 +231,15 @@ def _build_publish_plan(action: Action) -> PublishPlan:
 
 
 def _discover_skills(root: Path) -> list[MenuSkill]:
-    """Find skill folders under the project root."""
+    """Find skill folders under the project root and nested catalog folders."""
 
     skills: list[MenuSkill] = []
-    skill_files = {*root.glob("*/SKILL.md"), *root.glob("skills/*/SKILL.md")}
+    skill_files = {
+        *root.glob("*/SKILL.md"),
+        *root.glob("skills/**/SKILL.md"),
+    }
     for skill_file in sorted(skill_files):
-        if skill_file.parent.name.startswith("."):
+        if any(part.startswith(".") for part in skill_file.parts):
             continue
         skill = _read_menu_skill(skill_file)
         if skill is not None:
@@ -427,11 +430,12 @@ def _render_pipeline_report(context: PublishContext) -> None:
     evaluation.add_column("Signal", style="grey70")
     evaluation.add_column("Value", style="white")
     evaluation.add_row("Validation", "passed" if context.validation.passed else "failed")
-    evaluation.add_row("Garak status", str(context.metadata.extra.get("garak_security", {}).get("status")))
+    evaluation.add_row("LLM Guard status", str(context.metadata.extra.get("llm_guard_security", {}).get("status")))
     evaluation.add_row("Security score", str(context.security.score))
     evaluation.add_row("Security gate", context.security.decision)
     evaluation.add_row("Upskill status", str(context.metadata.extra.get("upskill_evaluation", {}).get("status")))
     evaluation.add_row("Performance", str(context.performance_exam.score))
+    evaluation.add_row("Maturity", str(context.metadata.maturity_score))
     evaluation.add_row("Lift", str(context.performance_exam.skill_lift))
     evaluation.add_row("Token delta", str(context.performance_exam.token_delta))
     evaluation.add_row("Ranking", context.ranking.label)
@@ -487,8 +491,8 @@ def _render_pipeline_report(context: PublishContext) -> None:
                 border_style="red",
             )
         )
-    garak_status = context.metadata.extra.get("garak_security")
-    if isinstance(garak_status, dict):
+    llm_guard_status = context.metadata.extra.get("llm_guard_security")
+    if isinstance(llm_guard_status, dict):
         security_evaluator = Table(
             show_header=True,
             header_style="grey70",
@@ -498,14 +502,21 @@ def _render_pipeline_report(context: PublishContext) -> None:
         )
         security_evaluator.add_column("Signal", style="grey70")
         security_evaluator.add_column("Value", style="white")
-        security_evaluator.add_row("Evaluator status", str(garak_status.get("status")))
-        security_evaluator.add_row("Score", str(garak_status.get("score")))
-        security_evaluator.add_row("Checks", ", ".join(garak_status.get("checks_run") or []) or "none")
-        security_evaluator.add_row("Command", " ".join(garak_status.get("command") or []) or "none")
-        security_evaluator.add_row("Artifact dir", str(garak_status.get("artifact_dir")))
-        security_evaluator.add_row("Reason", str(garak_status.get("reason")))
-        border_style = "red" if garak_status.get("status") in {"not_available", "failed"} else "yellow"
-        panels.append(Panel(security_evaluator, title="Garak Evaluator", border_style=border_style))
+        security_evaluator.add_row("Evaluator status", str(llm_guard_status.get("status")))
+        security_evaluator.add_row("Score", str(llm_guard_status.get("score")))
+        security_evaluator.add_row("Decision", context.security.decision)
+        security_evaluator.add_row("Checks", ", ".join(llm_guard_status.get("checks_run") or []) or "none")
+        security_evaluator.add_row("Findings", _severity_summary(context))
+        security_evaluator.add_row("Score bar", _score_bar(context.security.score))
+        security_evaluator.add_row("Artifact dir", str(llm_guard_status.get("artifact_dir")))
+        security_evaluator.add_row("Reason", str(llm_guard_status.get("reason")))
+        security_explanation = _llm_guard_explanation(context)
+        if security_explanation:
+            security_evaluator.add_row("Explanation", security_explanation)
+        if context.security.notes:
+            security_evaluator.add_row("Notes", "\n".join(context.security.notes))
+        border_style = "red" if llm_guard_status.get("status") in {"not_available", "failed"} else "yellow"
+        panels.append(Panel(security_evaluator, title="LLM Guard Evaluator", border_style=border_style))
     if context.security.findings:
         findings = Table(
             show_header=True,
@@ -542,6 +553,8 @@ def _render_pipeline_report(context: PublishContext) -> None:
             upskill.add_row("Reason", str(upskill_status.get("reason")))
         upskill.add_row("Status", "passed" if context.performance_exam.passed else "not passed")
         upskill.add_row("Score", str(context.performance_exam.score))
+        upskill.add_row("Maturity score", str(context.metadata.maturity_score))
+        upskill.add_row("Maturity source", _maturity_source_summary(context))
         upskill.add_row("Models", ", ".join(context.performance_exam.models_tested) or "none")
         upskill.add_row("Test cases", str(context.performance_exam.test_case_count))
         upskill.add_row("Baseline success", str(context.performance_exam.baseline_success_rate))
@@ -575,6 +588,54 @@ def _upskill_explanation(context: PublishContext) -> str:
     if exam.passed:
         return "Upskill showed measurable performance evidence for the skill."
     return "Upskill scored the run, but its pass criteria were not met."
+
+
+def _maturity_source_summary(context: PublishContext) -> str:
+    source = context.metadata.extra.get("maturity_score_source")
+    if not isinstance(source, dict):
+        return "not generated"
+    return (
+        f"validation={source.get('validation_score')}, "
+        f"upskill={source.get('upskill_score')}, "
+        f"formula={source.get('formula')}"
+    )
+
+
+def _llm_guard_explanation(context: PublishContext) -> str:
+    status = context.metadata.extra.get("llm_guard_security", {}).get("status")
+    score = context.security.score
+    if status != "scored":
+        return "LLM Guard did not return a scored security result, so the security gate blocks publishing."
+    if score is None:
+        return "LLM Guard completed but no security score was available."
+    if context.security.severity_counts.get("critical", 0) > 0:
+        return "LLM Guard found a critical security issue, so publishing is blocked."
+    if context.security.severity_counts.get("high", 0) > 0:
+        return "LLM Guard found high-risk content, so the skill requires review."
+    if context.security.findings:
+        return "LLM Guard found non-blocking security signals that should be reviewed."
+    return "LLM Guard found no prompt injection, secret, or hidden-text issues in the scanned skill content."
+
+
+def _severity_summary(context: PublishContext) -> str:
+    counts = context.security.severity_counts
+    ordered = ("critical", "high", "medium", "low")
+    parts = [f"{severity}={counts.get(severity, 0)}" for severity in ordered]
+    return ", ".join(parts)
+
+
+def _score_bar(score: float | None) -> Text:
+    if score is None:
+        return Text("not scored", style="red")
+    bounded = max(0.0, min(1.0, score))
+    filled = round(bounded * 20)
+    empty = 20 - filled
+    style = "green" if bounded >= 0.8 else "yellow" if bounded >= 0.5 else "red"
+    text = Text()
+    text.append("█" * filled, style=style)
+    text.append("░" * empty, style="grey35")
+    text.append(f" {bounded:.2f}", style="white")
+    return text
 
 
 def _render_bundle(context: PublishContext, bundle_bytes: bytes) -> None:
@@ -648,26 +709,18 @@ def _has_relationships(relationships: dict[str, object]) -> bool:
 
 @contextmanager
 def _scan_profile_environment(profile: ScanProfile):
-    """Apply temporary Garak/Upskill settings for the selected inspection depth."""
+    """Apply temporary LLM Guard/Upskill settings for the selected inspection depth."""
     if profile == "fast":
         overrides = {
-            "GARAK_PROBES": "promptinject.HijackHateHumans",
-            "GARAK_GENERATIONS": "1",
-            "GARAK_PARALLEL_ATTEMPTS": "4",
-            "GARAK_CONFIDENCE_INTERVAL_METHOD": "none",
-            "GARAK_SOFT_PROBE_PROMPT_CAP": "8",
-            "PUBLISHER_GARAK_TIMEOUT_SECONDS": "90",
+            "PUBLISHER_LLM_GUARD_PROMPT_INJECTION_THRESHOLD": "0.90",
+            "PUBLISHER_LLM_GUARD_MAX_TEXT_CHARS": "40000",
             "UPSKILL_USE_DEFAULT_TESTS": "true",
             "PUBLISHER_UPSKILL_TIMEOUT_SECONDS": "120",
         }
     else:
         overrides = {
-            "GARAK_PROBES": "promptinject",
-            "GARAK_GENERATIONS": "5",
-            "GARAK_PARALLEL_ATTEMPTS": "1",
-            "GARAK_CONFIDENCE_INTERVAL_METHOD": "bootstrap",
-            "GARAK_SOFT_PROBE_PROMPT_CAP": "256",
-            "PUBLISHER_GARAK_TIMEOUT_SECONDS": "600",
+            "PUBLISHER_LLM_GUARD_PROMPT_INJECTION_THRESHOLD": "0.85",
+            "PUBLISHER_LLM_GUARD_MAX_TEXT_CHARS": "120000",
             "UPSKILL_USE_DEFAULT_TESTS": "false",
             "PUBLISHER_UPSKILL_TIMEOUT_SECONDS": "600",
         }

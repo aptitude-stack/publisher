@@ -35,7 +35,7 @@ class RankingStage(PublisherStage):
                 "artifact_path": artifact_path,
             },
             messages=[
-                "Ranking stage combined authoritative Garak security, Upskill performance, compliance, metadata, and token efficiency.",
+                "Ranking stage combined authoritative LLM Guard security, Upskill performance, compliance, metadata, and token efficiency.",
                 "Security can override the publish decision even when a total score exists.",
             ],
         )
@@ -57,7 +57,7 @@ class RankingStage(PublisherStage):
         """Use the security stage score directly."""
         score = context.security.score if context.security.score is not None else 0.0
         context.ranking.criteria_scores["security"] = round(score, 2)
-        source = "NVIDIA garak"
+        source = "LLM Guard"
         context.ranking.explanation.append(
             f"Security score contributes {score:.2f} based on {source}."
         )

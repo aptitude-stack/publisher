@@ -18,12 +18,14 @@ class PerformanceExamStage(PublisherStage):
     def run(self, context: PublishContext) -> None:
         self._reset_exam_state(context)
         self._run_upskill_exam(context)
+        self._apply_maturity_score(context)
         artifact_path = self._write_exam_artifact(context)
         context.add_snapshot(
             stage_name=self.name,
             status="completed" if context.performance_exam.score is not None else "failed",
             data={
                 "score": context.performance_exam.score,
+                "maturity_score": context.metadata.maturity_score,
                 "passed": context.performance_exam.passed,
                 "test_case_count": context.performance_exam.test_case_count,
                 "models_tested": context.performance_exam.models_tested,
@@ -36,6 +38,7 @@ class PerformanceExamStage(PublisherStage):
             },
             messages=[
                 "Performance exam consumed Hugging Face Upskill as the sole performance source.",
+                "Metadata maturity_score was generated from validation quality and Upskill score.",
                 "No local performance estimate is produced when Upskill is unavailable or unscored.",
             ],
         )
@@ -123,6 +126,32 @@ class PerformanceExamStage(PublisherStage):
             "Metadata token_estimate was updated from Upskill skilled_avg_tokens."
         )
 
+    def _apply_maturity_score(self, context: PublishContext) -> None:
+        """Generate maturity from validation quality and Upskill evidence."""
+        validation_score = self._validation_maturity_score(context)
+        upskill_score = context.performance_exam.score if context.performance_exam.score is not None else 0.0
+        maturity_score = round((validation_score * 0.50) + (upskill_score * 0.50), 2)
+        context.metadata.maturity_score = maturity_score
+        context.metadata.extra["maturity_score_source"] = {
+            "type": "generated",
+            "formula": "0.50 * validation_score + 0.50 * upskill_score",
+            "validation_score": validation_score,
+            "upskill_score": upskill_score,
+            "upskill_status": context.metadata.extra.get("upskill_evaluation", {}).get("status"),
+        }
+        context.performance_exam.notes.append(
+            f"Metadata maturity_score was generated as {maturity_score:.2f} from validation {validation_score:.2f} and Upskill {upskill_score:.2f}."
+        )
+
+    def _validation_maturity_score(self, context: PublishContext) -> float:
+        """Score validation quality from contract errors and warnings."""
+        if context.validation.errors:
+            return 0.0
+        warning_count = len(context.validation.warnings)
+        if warning_count == 0:
+            return 1.0
+        return max(0.0, round(1.0 - min(warning_count, 5) * 0.1, 2))
+
     def _resolve_skill_root(self, context: PublishContext) -> Path:
         """Resolve the skill folder for Upskill."""
         source_path = Path(context.source.file_path)
@@ -152,6 +181,8 @@ class PerformanceExamStage(PublisherStage):
             "efficiency_label": exam.efficiency_label,
             "metadata_token_estimate": context.metadata.token_estimate,
             "metadata_token_estimate_source": context.metadata.extra.get("token_estimate_source"),
+            "metadata_maturity_score": context.metadata.maturity_score,
+            "metadata_maturity_score_source": context.metadata.extra.get("maturity_score_source"),
             "upskill": context.metadata.extra.get("upskill_evaluation"),
             "notes": exam.notes,
         }

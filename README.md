@@ -7,12 +7,12 @@ registry payload, compresses the bundle, and uploads it to an Aptitude registry.
 
 ```bash
 uv venv
-uv pip install -e ".[evaluators]"
+uv pip install -e .
 ```
 
-The evaluator extra installs:
+The base install includes:
 
-- `garak` for security scanning
+- `llm-guard` for skill-content security scanning
 - `upskill` for performance evaluation
 
 ## Inspect A Skill
@@ -36,12 +36,9 @@ export APTITUDE_REGISTRY_URL="https://api.aptitude-registry.dev"
 
 ## Evaluator Configuration
 
-Garak needs a model target:
-
-```bash
-export GARAK_TARGET_TYPE="openai"
-export GARAK_TARGET_NAME="gpt-4o-mini"
-```
+LLM Guard runs locally over the skill package content. It scans the main
+`SKILL.md`, metadata fields, schemas, companion markdown, scripts, references,
+and other text files for prompt injection, secrets, and hidden text.
 
 Upskill can be pointed at models with:
 
@@ -49,12 +46,12 @@ Upskill can be pointed at models with:
 export UPSKILL_MODELS="haiku,sonnet"
 ```
 
-Provider API keys are needed when the configured Garak or Upskill target uses a
-hosted model provider. For example, an OpenAI-backed Garak target expects:
+Provider API keys are needed when the configured Upskill target uses a hosted
+model provider. For example, an OpenAI-compatible target expects:
 
 ```bash
 export OPENAI_API_KEY="..."
 ```
 
-Security publishing decisions depend on Garak. If Garak is not configured or
+Security publishing decisions depend on LLM Guard. If LLM Guard is not configured or
 does not produce a scored result, the publisher blocks the publish flow.
