@@ -56,3 +56,4 @@ uv-cache/
 # Keep uv.lock tracked for reproducible builds.
 # Uncomment to ignore it:
 # uv.lock
+/tmp/
