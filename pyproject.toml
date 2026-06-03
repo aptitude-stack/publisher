@@ -2,7 +2,7 @@
 name = "aptitude-publisher"
 version = "0.1.0"
 description = "Publisher CLI for evaluating and publishing Aptitude skills"
-readme = "README.md"
+readme = "PYPI.md"
 requires-python = ">=3.12,<3.13"
 keywords = [
     "ai",

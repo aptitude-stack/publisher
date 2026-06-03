@@ -23,16 +23,24 @@ from publisher.registry.client import (
 
 _DEFAULT_REGISTRY_URL = "http://127.0.0.1:8000"
 _PACKAGE_NAME = "aptitude-publisher"
+_DEFAULT_PROG = "aptitude-publisher"
 
 
 def main(argv: list[str] | None = None) -> int:
     """Run the publisher CLI."""
     _load_local_env_defaults()
-    parser = _build_parser()
+    if argv is None:
+        argv = sys.argv[1:]
+        prog = Path(sys.argv[0]).name or _DEFAULT_PROG
+    else:
+        prog = _DEFAULT_PROG
+
+    parser = _build_parser(prog=prog)
     args = parser.parse_args(argv)
     if args.command is None:
-        parser.print_help()
-        return 0
+        from publisher.app.menu import run_menu
+
+        return run_menu()
 
     if args.command == "inspect":
         return _run_inspect(args)
@@ -47,9 +55,9 @@ def main(argv: list[str] | None = None) -> int:
     return 2
 
 
-def _build_parser() -> argparse.ArgumentParser:
+def _build_parser(prog: str = _DEFAULT_PROG) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="aptitude-publisher",
+        prog=prog,
         description="Evaluate Aptitude skills and publish them to the registry.",
     )
     parser.add_argument(
