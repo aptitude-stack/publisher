@@ -53,3 +53,51 @@ def test_build_publish_plan_prints_separators_between_decisions(
         "separator",
         "select:Inspection depth",
     ]
+
+
+def test_flow_options_hide_batch_upload_without_admin_token(monkeypatch) -> None:
+    monkeypatch.delenv("APTITUDE_ADMIN_TOKEN", raising=False)
+    monkeypatch.delenv("APTITUDE_REGISTRY_ADMIN_TOKEN", raising=False)
+    monkeypatch.delenv("REGISTRY_ADMIN_TOKEN", raising=False)
+
+    values = [value for _, value in menu._flow_options()]
+
+    assert "batch_upload" not in values
+
+
+def test_flow_options_show_batch_upload_with_admin_token(monkeypatch) -> None:
+    monkeypatch.setenv("APTITUDE_ADMIN_TOKEN", "admin-token")
+
+    values = [value for _, value in menu._flow_options()]
+
+    assert "batch_upload" in values
+
+
+def test_batch_upload_wizard_expands_directory_into_skill_paths(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    skill_dir = tmp_path / "example-skill"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text("# Example\n", encoding="utf-8")
+    captured: dict[str, object] = {}
+
+    def fake_run_admin_batch_upload(args):
+        captured["skill_paths"] = args.skill_paths
+        captured["admin_token"] = args.admin_token
+        captured["dry_run"] = args.dry_run
+        return 0
+
+    monkeypatch.setenv("APTITUDE_ADMIN_TOKEN", "admin-token")
+    monkeypatch.setattr(menu, "_prompt_directory", lambda label: tmp_path)
+    monkeypatch.setattr(menu, "_print_step_separator", lambda: None)
+    monkeypatch.setattr(menu, "_render_batch_upload_plan", lambda **kwargs: None)
+    monkeypatch.setattr(menu, "_confirm", lambda *args, **kwargs: True)
+    monkeypatch.setattr(menu, "_run_admin_batch_upload", fake_run_admin_batch_upload)
+
+    assert menu._run_batch_upload_wizard() == 0
+    assert captured == {
+        "skill_paths": [str(skill_dir.resolve())],
+        "admin_token": "admin-token",
+        "dry_run": False,
+    }

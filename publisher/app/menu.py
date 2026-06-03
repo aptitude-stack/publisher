@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 from contextlib import contextmanager
 from dataclasses import dataclass
 import os
@@ -18,6 +19,7 @@ from rich.text import Text
 
 from publisher.artifacts.bundle import build_bundle_bytes
 from publisher.app.cli import (
+    _default_admin_token,
     _default_publish_token,
     _default_registry_url,
     _existing_skill_lines,
@@ -26,6 +28,7 @@ from publisher.app.cli import (
     _registry_result_lines,
     _relationship_alert_lines,
     _relationship_check_token,
+    _run_admin_batch_upload,
     _should_block_existing_slug,
 )
 from publisher.app.pipeline import PublisherPipeline
@@ -45,7 +48,7 @@ except ModuleNotFoundError:  # pragma: no cover - platform fallback
     tty = None  # type: ignore[assignment]
 
 
-Action = Literal["inspect", "publish", "help", "exit"]
+Action = Literal["inspect", "publish", "batch_upload", "help", "exit"]
 FailureAction = Literal["upload_another", "main_menu"]
 SkillSource = Literal["local", "path"]
 Intent = Literal["create_skill", "publish_version"]
@@ -126,19 +129,9 @@ def run_menu() -> int:
         while True:
             action = _select(
                 "Choose a flow",
-                [
-                    ("Publish to registry", "publish"),
-                    ("Full inspect", "inspect"),
-                    ("Help", "help"),
-                    ("Exit", "exit"),
-                ],
+                _flow_options(),
                 subtitle="Start with inspect, publish, or help.",
-                descriptions={
-                    "inspect": "Run the full pipeline and show the evaluation report.",
-                    "publish": "Run all gates, build the bundle, and upload to the registry.",
-                    "help": "Show what each publisher phase does.",
-                    "exit": "Leave the publisher wizard.",
-                },
+                descriptions=_flow_descriptions(),
             )
             if action == "help":
                 _render_help()
@@ -146,6 +139,12 @@ def run_menu() -> int:
             if action == "exit":
                 CONSOLE.print("[grey70]Exited publisher wizard.[/grey70]")
                 return 0
+            if action == "batch_upload":
+                try:
+                    _run_batch_upload_wizard()
+                except _BackToMainMenu:
+                    continue
+                continue
 
             try:
                 plan = _build_publish_plan(action)
@@ -179,6 +178,33 @@ def run_menu() -> int:
     except KeyboardInterrupt:
         CONSOLE.print("[grey70]Exited publisher wizard.[/grey70]")
         return 0
+
+
+def _flow_options() -> list[tuple[str, Action]]:
+    options: list[tuple[str, Action]] = [
+        ("Publish to registry", "publish"),
+        ("Full inspect", "inspect"),
+    ]
+    if _default_admin_token():
+        options.append(("Admin batch upload", "batch_upload"))
+    options.extend(
+        [
+            ("Help", "help"),
+            ("Exit", "exit"),
+        ]
+    )
+    return options
+
+
+def _flow_descriptions() -> dict[Action, str]:
+    descriptions: dict[Action, str] = {
+        "inspect": "Run the full pipeline and show the evaluation report.",
+        "publish": "Run all gates, build the bundle, and upload to the registry.",
+        "batch_upload": "Admin token detected; upload every skill in a directory.",
+        "help": "Show what each publisher phase does.",
+        "exit": "Leave the publisher wizard.",
+    }
+    return descriptions
 
 
 def _render_header() -> None:
@@ -404,6 +430,69 @@ def _select_failure_action() -> FailureAction:
         },
         allow_back=True,
     )
+
+
+def _run_batch_upload_wizard() -> int:
+    admin_token = _default_admin_token()
+    if not admin_token:
+        CONSOLE.print(
+            _frame(
+                "Set APTITUDE_ADMIN_TOKEN, APTITUDE_REGISTRY_ADMIN_TOKEN, "
+                "or REGISTRY_ADMIN_TOKEN to enable admin batch upload.",
+                title="Admin Batch Upload",
+                border_style="yellow",
+            )
+        )
+        return 1
+
+    _print_step_separator()
+    skills_directory = _prompt_directory("Skills directory")
+    skills = _discover_skills(skills_directory)
+    if not skills:
+        CONSOLE.print(
+            _frame(
+                f"No skill folders with SKILL.md were found under {skills_directory}.",
+                title="Admin Batch Upload",
+                border_style="yellow",
+            )
+        )
+        return 1
+
+    skill_paths = [str(skill.path.resolve()) for skill in skills]
+    _print_step_separator()
+    _render_batch_upload_plan(skills_directory=skills_directory, skill_paths=skill_paths)
+    _print_step_separator()
+    if not _confirm("Upload this skill directory?", default=False, allow_back=True):
+        CONSOLE.print("[grey70]Batch upload cancelled.[/grey70]")
+        return 0
+
+    args = argparse.Namespace(
+        skill_paths=skill_paths,
+        intent=None,
+        trust_tier="untrusted",
+        namespace="public",
+        artifact_origin="internal",
+        policy_pack_slug=None,
+        publisher_identity=None,
+        registry_url=_default_registry_url(),
+        admin_token=admin_token,
+        concurrency=4,
+        dry_run=False,
+    )
+    return _run_admin_batch_upload(args)
+
+
+def _render_batch_upload_plan(*, skills_directory: Path, skill_paths: Sequence[str]) -> None:
+    table = Table.grid(expand=True, padding=(0, 2))
+    table.add_column(style=THEME.text_muted, no_wrap=True)
+    table.add_column(style=THEME.text_body)
+    table.add_row("Action", "Admin batch upload")
+    table.add_row("Directory", str(skills_directory.resolve()))
+    table.add_row("Skills", str(len(skill_paths)))
+    table.add_row("Concurrency", "4")
+    table.add_row("Registry", _default_registry_url())
+    CONSOLE.print(_frame(table, title="Admin Batch Upload Plan"))
+    CONSOLE.print()
 
 
 def _execute_plan(plan: PublishPlan) -> int:
@@ -1106,6 +1195,14 @@ def _prompt_path(label: str) -> Path:
         if path.exists():
             return path
         CONSOLE.print("[yellow]Path does not exist.[/yellow]")
+
+
+def _prompt_directory(label: str) -> Path:
+    while True:
+        path = _prompt_path(label)
+        if path.is_dir():
+            return path
+        CONSOLE.print("[yellow]Path is not a directory.[/yellow]")
 
 
 def _confirm(label: str, *, default: bool, allow_back: bool = False) -> bool:

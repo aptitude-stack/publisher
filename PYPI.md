@@ -58,7 +58,7 @@ export APTITUDE_READ_TOKEN=reader-token
 Launch the guided publisher wizard:
 
 ```bash
-aptitude-publisher menu
+aptitude-publisher
 ```
 
 Inspect a skill folder before publishing:
@@ -86,7 +86,7 @@ export APTITUDE_ADMIN_TOKEN=admin-token
 aptitude-publisher admin-batch-upload /path/to/skill-a /path/to/skill-b --intent create_skill
 ```
 
-Batch upload runs local scans and uploads in the background, then prints only a final summary.
+Batch upload runs local scans and uploads in the background, then prints only a final summary. When an admin token is set, the guided wizard also offers a batch-upload path that accepts one directory containing skill folders.
 
 Publish a new version of an existing skill:
 
@@ -115,7 +115,7 @@ Generated files under `.publisher_artifacts/` are local trace artifacts. They ar
 
 ## What Works Today
 
-- guided inspect and publish menu
+- guided inspect, publish, and admin batch-upload wizard
 - skill-root discovery from local folders or explicit paths
 - registry identity derivation from `SKILL.md` frontmatter
 - create-skill and publish-version intent handling

@@ -49,6 +49,13 @@ def test_root_help_still_prints_cli_help(capsys: pytest.CaptureFixture[str]) -> 
     assert "usage: aptitude-publisher" in capsys.readouterr().out
 
 
+def test_menu_subcommand_is_not_registered() -> None:
+    parser = _build_parser()
+
+    with pytest.raises(SystemExit):
+        parser.parse_args(["menu"])
+
+
 def test_admin_batch_upload_parser_uses_admin_token_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

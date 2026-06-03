@@ -19,13 +19,14 @@ The system is intentionally split in three:
 
 Primary commands:
 
-- `aptitude-publisher menu`
+- `aptitude-publisher`
 - `aptitude-publisher inspect /path/to/skill`
 - `aptitude-publisher publish /path/to/skill`
 - `aptitude-publisher admin-batch-upload /path/to/skill-a /path/to/skill-b`
 
-`menu` launches the guided review-first wizard. `inspect` runs the full local pipeline and prints evaluation results without uploading. `publish` runs the same gates, builds the upload bundle, checks registry state when tokens are available, and uploads only when the publish decision allows it.
+Running `aptitude-publisher` without a subcommand launches the guided review-first wizard. `inspect` runs the full local pipeline and prints evaluation results without uploading. `publish` runs the same gates, builds the upload bundle, checks registry state when tokens are available, and uploads only when the publish decision allows it.
 `admin-batch-upload` runs the same local gates for multiple skill folders concurrently, uploads each accepted skill with an admin token, and prints only a final summary.
+When `APTITUDE_ADMIN_TOKEN`, `APTITUDE_REGISTRY_ADMIN_TOKEN`, or `REGISTRY_ADMIN_TOKEN` is set, the wizard also offers an admin batch-upload path that accepts one directory containing skill folders.
 
 Common publish flags:
 
@@ -155,7 +156,7 @@ The publish job uses the GitHub Environment `pypi`. That gives releases a dedica
 Launch the interactive wizard:
 
 ```bash
-uv run aptitude-publisher menu
+uv run aptitude-publisher
 ```
 
 Inspect a skill folder before publishing:
@@ -233,7 +234,7 @@ The Upskill command template supports `{skill_path}`, `{skill_file}`, `{artifact
 
 ## What Works Today
 
-- guided inspect and publish menu
+- guided inspect, publish, and admin batch-upload wizard
 - skill-root discovery from local folders or explicit paths
 - registry identity derivation from `SKILL.md` frontmatter
 - create-skill and publish-version intent handling

@@ -50,10 +50,6 @@ def main(argv: list[str] | None = None) -> int:
         return _run_publish(args)
     if args.command == "admin-batch-upload":
         return _run_admin_batch_upload(args)
-    if args.command == "menu":
-        from publisher.app.menu import run_menu
-
-        return run_menu()
 
     parser.error(f"Unknown command: {args.command}")
     return 2
@@ -140,10 +136,6 @@ def _build_parser(prog: str = _DEFAULT_PROG) -> argparse.ArgumentParser:
         help="run every local flow and stop before API uploads",
     )
 
-    subparsers.add_parser(
-        "menu",
-        help="open an interactive menu for inspect, dry-run, or publish",
-    )
     return parser
 
 
