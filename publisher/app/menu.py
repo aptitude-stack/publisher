@@ -29,6 +29,7 @@ from publisher.app.cli import (
     _relationship_alert_lines,
     _relationship_check_token,
     _run_admin_batch_upload,
+    _scan_profile_environment,
     _should_block_existing_slug,
 )
 from publisher.app.pipeline import PublisherPipeline
@@ -417,6 +418,7 @@ def _select_skill(skills: list[MenuSkill]) -> MenuSkill | None:
 
 
 def _select_failure_action() -> FailureAction:
+    CONSOLE.print()
     return _select(
         "Workflow failed",
         [
@@ -459,25 +461,20 @@ def _run_batch_upload_wizard() -> int:
         return 1
 
     skill_paths = [str(skill.path.resolve()) for skill in skills]
-    _print_step_separator()
-    _render_batch_upload_plan(skills_directory=skills_directory, skill_paths=skill_paths)
-    _print_step_separator()
-    if not _confirm("Upload this skill directory?", default=False, allow_back=True):
-        CONSOLE.print("[grey70]Batch upload cancelled.[/grey70]")
-        return 0
 
     args = argparse.Namespace(
         skill_paths=skill_paths,
         intent=None,
-        trust_tier="untrusted",
+        trust_tier="verified",
         namespace="public",
-        artifact_origin="internal",
+        artifact_origin="verified",
         policy_pack_slug=None,
         publisher_identity=None,
         registry_url=_default_registry_url(),
         admin_token=admin_token,
         concurrency=4,
         dry_run=False,
+        scan_profile="fast",
     )
     return _run_admin_batch_upload(args)
 
@@ -557,6 +554,8 @@ def _execute_plan(plan: PublishPlan) -> int:
             bundle_bytes=bundle_bytes,
         )
     _render_registry_result(result)
+    if 200 <= result.status_code < 300:
+        _print_step_separator()
     return 0 if 200 <= result.status_code < 300 else 1
 
 
@@ -972,36 +971,6 @@ def _has_relationships(relationships: dict[str, object]) -> bool:
         if isinstance(value, list) and value:
             return True
     return False
-
-
-@contextmanager
-def _scan_profile_environment(profile: ScanProfile):
-    """Apply temporary LLM Guard/Upskill settings for the selected inspection depth."""
-    if profile == "fast":
-        overrides = {
-            "PUBLISHER_LLM_GUARD_PROMPT_INJECTION_THRESHOLD": "0.90",
-            "PUBLISHER_LLM_GUARD_MAX_TEXT_CHARS": "40000",
-            "UPSKILL_USE_DEFAULT_TESTS": "true",
-            "PUBLISHER_UPSKILL_TIMEOUT_SECONDS": "120",
-        }
-    else:
-        overrides = {
-            "PUBLISHER_LLM_GUARD_PROMPT_INJECTION_THRESHOLD": "0.85",
-            "PUBLISHER_LLM_GUARD_MAX_TEXT_CHARS": "120000",
-            "UPSKILL_USE_DEFAULT_TESTS": "false",
-            "PUBLISHER_UPSKILL_TIMEOUT_SECONDS": "600",
-        }
-
-    previous = {key: os.environ.get(key) for key in overrides}
-    try:
-        os.environ.update(overrides)
-        yield
-    finally:
-        for key, value in previous.items():
-            if value is None:
-                os.environ.pop(key, None)
-            else:
-                os.environ[key] = value
 
 
 def _format_gate_failures(context: PublishContext) -> str:

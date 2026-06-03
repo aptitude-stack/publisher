@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from publisher.app import menu
 
 
@@ -86,13 +88,24 @@ def test_batch_upload_wizard_expands_directory_into_skill_paths(
         captured["skill_paths"] = args.skill_paths
         captured["admin_token"] = args.admin_token
         captured["dry_run"] = args.dry_run
+        captured["scan_profile"] = args.scan_profile
+        captured["trust_tier"] = args.trust_tier
+        captured["artifact_origin"] = args.artifact_origin
         return 0
 
     monkeypatch.setenv("APTITUDE_ADMIN_TOKEN", "admin-token")
     monkeypatch.setattr(menu, "_prompt_directory", lambda label: tmp_path)
     monkeypatch.setattr(menu, "_print_step_separator", lambda: None)
-    monkeypatch.setattr(menu, "_render_batch_upload_plan", lambda **kwargs: None)
-    monkeypatch.setattr(menu, "_confirm", lambda *args, **kwargs: True)
+    monkeypatch.setattr(
+        menu,
+        "_render_batch_upload_plan",
+        lambda **kwargs: pytest.fail("batch wizard should not render a plan"),
+    )
+    monkeypatch.setattr(
+        menu,
+        "_confirm",
+        lambda *args, **kwargs: pytest.fail("batch wizard should not confirm"),
+    )
     monkeypatch.setattr(menu, "_run_admin_batch_upload", fake_run_admin_batch_upload)
 
     assert menu._run_batch_upload_wizard() == 0
@@ -100,4 +113,7 @@ def test_batch_upload_wizard_expands_directory_into_skill_paths(
         "skill_paths": [str(skill_dir.resolve())],
         "admin_token": "admin-token",
         "dry_run": False,
+        "scan_profile": "fast",
+        "trust_tier": "verified",
+        "artifact_origin": "verified",
     }

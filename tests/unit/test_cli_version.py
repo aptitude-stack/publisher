@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 import tomllib
 
@@ -8,7 +9,9 @@ import pytest
 from publisher.app.cli import (
     BatchUploadResult,
     _build_parser,
+    _batch_progress,
     _publisher_cli_version,
+    _run_admin_batch_upload,
     main,
 )
 
@@ -68,6 +71,18 @@ def test_admin_batch_upload_parser_uses_admin_token_env(
     assert args.skill_paths == ["skills/a", "skills/b"]
     assert args.admin_token == "admin-token"
     assert args.concurrency == 4
+    assert args.scan_profile == "fast"
+    assert args.trust_tier == "verified"
+    assert args.artifact_origin == "verified"
+
+
+def test_admin_batch_upload_parser_accepts_full_scan_profile() -> None:
+    parser = _build_parser()
+    args = parser.parse_args(
+        ["admin-batch-upload", "skills/a", "--scan-profile", "full"]
+    )
+
+    assert args.scan_profile == "full"
 
 
 def test_admin_batch_upload_rejects_global_identity_overrides() -> None:
@@ -124,8 +139,87 @@ def test_admin_batch_upload_prints_summary_only(
     assert "skill-1" in output
     assert "skill-2" in output
     assert "uploaded" in output
+    assert "Scan profile" in output
+    assert "Trust tier" in output
+    assert "Origin" in output
+    assert "fast" in output
+    assert "verified" in output
     assert "Evaluation Summary" not in output
     assert "Stages" not in output
+
+
+def test_admin_batch_upload_uses_fast_scan_environment_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    parser = _build_parser()
+    args = parser.parse_args(["admin-batch-upload", "skills/a", "--dry-run"])
+    captured: dict[str, str | None] = {}
+
+    def fake_upload_one(index, skill_path, args):
+        captured["threshold"] = os.environ.get(
+            "PUBLISHER_LLM_GUARD_PROMPT_INJECTION_THRESHOLD"
+        )
+        captured["max_chars"] = os.environ.get("PUBLISHER_LLM_GUARD_MAX_TEXT_CHARS")
+        captured["default_tests"] = os.environ.get("UPSKILL_USE_DEFAULT_TESTS")
+        captured["timeout"] = os.environ.get("PUBLISHER_UPSKILL_TIMEOUT_SECONDS")
+        return BatchUploadResult(
+            index=index,
+            path=skill_path,
+            slug="skill-a",
+            version="0.1.0",
+            status="ready",
+            message="bundle 1 bytes",
+        )
+
+    monkeypatch.setattr("publisher.app.cli._upload_one_batch_skill", fake_upload_one)
+
+    assert _run_admin_batch_upload(args) == 0
+    assert captured == {
+        "threshold": "0.90",
+        "max_chars": "40000",
+        "default_tests": "true",
+        "timeout": "120",
+    }
+
+
+def test_admin_batch_upload_progress_bar_is_persistent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeProgress:
+        def __init__(self, *args, **kwargs):
+            captured["transient"] = kwargs.get("transient")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return None
+
+        def add_task(self, description, *, total):
+            captured["description"] = description
+            captured["total"] = total
+            return "task"
+
+        def update(self, task, *, description, advance):
+            captured["update_task"] = task
+            captured["update_description"] = description
+            captured["advance"] = advance
+
+    monkeypatch.setattr("publisher.app.cli.Progress", FakeProgress)
+
+    with _batch_progress(total=2) as progress:
+        progress.advance(status="uploaded")
+
+    assert captured == {
+        "transient": False,
+        "description": "Running batch upload",
+        "total": 2,
+        "update_task": "task",
+        "update_description": "Processed 1/2: uploaded",
+        "advance": 1,
+    }
 
 
 def _pyproject_version() -> str:

@@ -25,8 +25,8 @@ Primary commands:
 - `aptitude-publisher admin-batch-upload /path/to/skill-a /path/to/skill-b`
 
 Running `aptitude-publisher` without a subcommand launches the guided review-first wizard. `inspect` runs the full local pipeline and prints evaluation results without uploading. `publish` runs the same gates, builds the upload bundle, checks registry state when tokens are available, and uploads only when the publish decision allows it.
-`admin-batch-upload` runs the same local gates for multiple skill folders concurrently, uploads each accepted skill with an admin token, and prints only a final summary.
-When `APTITUDE_ADMIN_TOKEN`, `APTITUDE_REGISTRY_ADMIN_TOKEN`, or `REGISTRY_ADMIN_TOKEN` is set, the wizard also offers an admin batch-upload path that accepts one directory containing skill folders.
+`admin-batch-upload` runs the same local gates for multiple skill folders concurrently with the fast scan profile and verified trust defaults, uploads each accepted skill with an admin token, shows a progress bar, and prints only a final summary.
+When `APTITUDE_ADMIN_TOKEN`, `APTITUDE_REGISTRY_ADMIN_TOKEN`, or `REGISTRY_ADMIN_TOKEN` is set, the wizard also offers an admin batch-upload path that accepts one directory containing skill folders and starts immediately with those defaults.
 
 Common publish flags:
 
@@ -194,6 +194,7 @@ uv run aptitude-publisher admin-batch-upload \
 ```
 
 Batch upload suppresses per-skill pipeline reports while scans and uploads run. The CLI prints only a final summary with each skill's status, HTTP result, slug, version, and message.
+Batch upload defaults to `--scan-profile fast`, `--trust-tier verified`, and `--artifact-origin verified` so unattended admin runs stay lightweight and trusted. Use `--scan-profile full` when a deeper pre-upload review is needed.
 
 Override registry identity when the skill metadata needs an explicit local override:
 

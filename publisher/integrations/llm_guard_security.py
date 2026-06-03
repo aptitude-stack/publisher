@@ -146,8 +146,12 @@ def _suppress_llm_guard_output():
     """Keep third-party scanner logs out of the interactive publisher output."""
     noisy_loggers = [
         "llm_guard",
+        "llm_guard.input_scanners",
+        "llm_guard.input_scanners.prompt_injection",
+        "llm_guard.input_scanners.prompt_injection.prompt_injection",
         "transformers",
         "huggingface_hub",
+        "optimum",
         "sentence_transformers",
     ]
     previous_levels = {

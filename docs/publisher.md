@@ -11,9 +11,12 @@ admin-scoped registry token from `--admin-token`, `APTITUDE_ADMIN_TOKEN`,
 `APTITUDE_REGISTRY_ADMIN_TOKEN`, or `REGISTRY_ADMIN_TOKEN`.
 
 Batch mode intentionally suppresses per-skill pipeline reports. Local scans,
-bundle creation, duplicate checks, and uploads run in the background; the CLI
-prints one final summary with status, HTTP code, slug, version, and message for
-each input skill.
+bundle creation, duplicate checks, and uploads run in the background with a
+visible progress bar; the CLI prints one final summary with status, HTTP code,
+slug, version, and message for each input skill. Batch upload defaults to the
+fast scan profile, `verified` trust tier, and `verified` artifact origin to keep
+unattended admin runs lightweight and trusted. Pass `--scan-profile full` for a
+deeper review.
 
 ## Stages
 

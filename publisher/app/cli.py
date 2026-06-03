@@ -4,18 +4,34 @@ from __future__ import annotations
 
 import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import contextmanager
 from dataclasses import dataclass
 from importlib import metadata as importlib_metadata
 import os
 import sys
 import tomllib
 from pathlib import Path
+from typing import Literal
+
+from rich import box
+from rich.console import Console, Group
+from rich.panel import Panel
+from rich.progress import (
+    BarColumn,
+    Progress,
+    SpinnerColumn,
+    TaskProgressColumn,
+    TextColumn,
+    TimeElapsedColumn,
+)
+from rich.table import Table
 
 from publisher.artifacts.bundle import build_bundle_bytes
 from publisher.app.pipeline import PublisherPipeline
 from publisher.registry.client import (
     ExistingSkill,
     RegistryLookupUnavailable,
+    RegistryPublishResult,
     RelationshipCheckIssue,
     check_relationship_references,
     get_existing_skill,
@@ -26,6 +42,11 @@ from publisher.registry.client import (
 _DEFAULT_REGISTRY_URL = "http://127.0.0.1:8000"
 _PACKAGE_NAME = "aptitude-publisher"
 _DEFAULT_PROG = "aptitude-publisher"
+_TEXT_BODY = "white"
+_TEXT_MUTED = "grey70"
+_BORDER_PRIMARY = "grey27"
+_ACCENT = "#8fa3ad"
+ScanProfile = Literal["fast", "slow"]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -135,6 +156,12 @@ def _build_parser(prog: str = _DEFAULT_PROG) -> argparse.ArgumentParser:
         action="store_true",
         help="run every local flow and stop before API uploads",
     )
+    batch_parser.add_argument(
+        "--scan-profile",
+        choices=("fast", "full"),
+        default="fast",
+        help="local scan profile for every skill; default: fast",
+    )
 
     return parser
 
@@ -143,14 +170,27 @@ def _add_shared_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("skill_path", help="path to the skill folder")
     parser.add_argument("--slug", help="override the skill slug for registry publish")
     parser.add_argument("--version", help="override the semantic version for this publish")
-    _add_publish_metadata_arguments(parser)
+    _add_publish_metadata_arguments(
+        parser,
+        default_trust_tier="untrusted",
+        default_artifact_origin="internal",
+    )
 
 
 def _add_batch_shared_arguments(parser: argparse.ArgumentParser) -> None:
-    _add_publish_metadata_arguments(parser)
+    _add_publish_metadata_arguments(
+        parser,
+        default_trust_tier="verified",
+        default_artifact_origin="verified",
+    )
 
 
-def _add_publish_metadata_arguments(parser: argparse.ArgumentParser) -> None:
+def _add_publish_metadata_arguments(
+    parser: argparse.ArgumentParser,
+    *,
+    default_trust_tier: str,
+    default_artifact_origin: str,
+) -> None:
     parser.add_argument(
         "--intent",
         choices=("create_skill", "publish_version"),
@@ -158,14 +198,14 @@ def _add_publish_metadata_arguments(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "--trust-tier",
-        default="untrusted",
+        default=default_trust_tier,
         choices=("untrusted", "internal", "verified"),
         help="governance trust tier",
     )
     parser.add_argument("--namespace", default="public", help="target registry namespace")
     parser.add_argument(
         "--artifact-origin",
-        default="internal",
+        default=default_artifact_origin,
         choices=("internal", "imported", "verified", "restricted"),
         help="governance artifact origin",
     )
@@ -263,23 +303,27 @@ def _run_admin_batch_upload(args: argparse.Namespace) -> int:
     concurrency = max(1, min(args.concurrency, len(args.skill_paths)))
 
     results: list[BatchUploadResult | None] = [None] * len(args.skill_paths)
-    with ThreadPoolExecutor(max_workers=concurrency) as executor:
-        futures = {
-            executor.submit(_upload_one_batch_skill, index, path, args): index
-            for index, path in enumerate(args.skill_paths, start=1)
-        }
-        for future in as_completed(futures):
-            index = futures[future]
-            try:
-                result = future.result()
-            except Exception as exc:  # pragma: no cover - defensive boundary
-                result = BatchUploadResult(
-                    index=index,
-                    path=args.skill_paths[index - 1],
-                    status="failed",
-                    message=str(exc),
-                )
-            results[index - 1] = result
+    scan_profile = _normalize_scan_profile(args.scan_profile)
+    with _batch_progress(total=len(args.skill_paths)) as progress:
+        with _scan_profile_environment(scan_profile):
+            with ThreadPoolExecutor(max_workers=concurrency) as executor:
+                futures = {
+                    executor.submit(_upload_one_batch_skill, index, path, args): index
+                    for index, path in enumerate(args.skill_paths, start=1)
+                }
+                for future in as_completed(futures):
+                    index = futures[future]
+                    try:
+                        result = future.result()
+                    except Exception as exc:  # pragma: no cover - defensive boundary
+                        result = BatchUploadResult(
+                            index=index,
+                            path=args.skill_paths[index - 1],
+                            status="failed",
+                            message=str(exc),
+                        )
+                    results[index - 1] = result
+                    progress.advance(status=result.status)
 
     completed = [result for result in results if result is not None]
     _print_batch_summary(
@@ -287,6 +331,9 @@ def _run_admin_batch_upload(args: argparse.Namespace) -> int:
         requested_count=len(args.skill_paths),
         concurrency=concurrency,
         dry_run=args.dry_run,
+        scan_profile=scan_profile,
+        trust_tier=args.trust_tier,
+        artifact_origin=args.artifact_origin,
     )
     if not completed:
         return 1
@@ -435,37 +482,164 @@ def _print_batch_summary(
     requested_count: int,
     concurrency: int,
     dry_run: bool,
+    scan_profile: ScanProfile,
+    trust_tier: str,
+    artifact_origin: str,
 ) -> None:
-    print(_separator())
-    print("Admin Batch Upload Summary")
-    print(_separator())
-    print(f"skills       {requested_count}")
-    print(f"concurrency  {concurrency}")
-    print(f"mode         {'dry-run' if dry_run else 'upload'}")
-    print()
-    header = f"{'#':<4} {'status':<15} {'http':<5} {'slug':<24} {'version':<12} message"
-    print(header)
-    print("-" * len(header))
+    console = Console()
+    metadata = Table.grid(padding=(0, 2))
+    metadata.add_column(style=_TEXT_MUTED, no_wrap=True)
+    metadata.add_column(style=_TEXT_BODY)
+    metadata.add_row("Skills", str(requested_count))
+    metadata.add_row("Concurrency", str(concurrency))
+    metadata.add_row("Mode", "dry-run" if dry_run else "upload")
+    metadata.add_row("Scan profile", _scan_profile_label(scan_profile))
+    metadata.add_row("Trust tier", trust_tier)
+    metadata.add_row("Origin", artifact_origin)
+
+    results_table = Table(
+        box=box.SIMPLE_HEAD,
+        header_style=_TEXT_MUTED,
+        border_style=_BORDER_PRIMARY,
+        expand=True,
+        show_lines=False,
+        pad_edge=False,
+    )
+    results_table.add_column("#", style=_TEXT_MUTED, justify="right", no_wrap=True)
+    results_table.add_column("Status", no_wrap=True)
+    results_table.add_column("HTTP", style=_TEXT_MUTED, justify="right", no_wrap=True)
+    results_table.add_column("Slug", style=_TEXT_BODY, overflow="fold")
+    results_table.add_column("Version", style=_TEXT_MUTED, no_wrap=True)
+    results_table.add_column("Message", style=_TEXT_BODY, overflow="fold")
     for result in results:
         http_status = "" if result.http_status is None else str(result.http_status)
         slug = result.slug or "-"
         version = result.version or "-"
         message = result.message or result.path
-        print(
-            f"{result.index:<4} {result.status:<15} {http_status:<5} "
-            f"{slug:<24} {version:<12} {message}"
+        results_table.add_row(
+            str(result.index),
+            result.status,
+            http_status,
+            slug,
+            version,
+            message,
+            style=_batch_status_style(result.status),
         )
 
     counts: dict[str, int] = {}
     for result in results:
         counts[result.status] = counts.get(result.status, 0) + 1
-    print("\nCounts")
+
+    counts_table = Table.grid(padding=(0, 2))
+    counts_table.add_column(style=_TEXT_MUTED, no_wrap=True)
+    counts_table.add_column(style=_TEXT_BODY, justify="right")
     for status, count in sorted(counts.items()):
-        print(f"{status:<15} {count}")
+        counts_table.add_row(status, str(count), style=_batch_status_style(status))
+
+    console.print(
+        Panel(
+            Group(metadata, "", results_table, "", counts_table),
+            title="Admin Batch Upload Summary",
+            border_style=_BORDER_PRIMARY,
+            box=box.ROUNDED,
+            expand=True,
+        )
+    )
 
 
 def _batch_result_succeeded(result: BatchUploadResult) -> bool:
     return result.status in {"uploaded", "ready"}
+
+
+def _batch_status_style(status: str) -> str:
+    if status in {"uploaded", "ready"}:
+        return "green"
+    failed_statuses = {
+        "blocked",
+        "pipeline_failed",
+        "bundle_failed",
+        "upload_failed",
+        "failed",
+    }
+    if status in failed_statuses:
+        return "red"
+    return _TEXT_BODY
+
+
+@contextmanager
+def _scan_profile_environment(profile: ScanProfile):
+    """Apply temporary LLM Guard/Upskill settings for the selected inspection depth."""
+    if profile == "fast":
+        overrides = {
+            "PUBLISHER_LLM_GUARD_PROMPT_INJECTION_THRESHOLD": "0.90",
+            "PUBLISHER_LLM_GUARD_MAX_TEXT_CHARS": "40000",
+            "UPSKILL_USE_DEFAULT_TESTS": "true",
+            "PUBLISHER_UPSKILL_TIMEOUT_SECONDS": "120",
+        }
+    else:
+        overrides = {
+            "PUBLISHER_LLM_GUARD_PROMPT_INJECTION_THRESHOLD": "0.85",
+            "PUBLISHER_LLM_GUARD_MAX_TEXT_CHARS": "120000",
+            "UPSKILL_USE_DEFAULT_TESTS": "false",
+            "PUBLISHER_UPSKILL_TIMEOUT_SECONDS": "600",
+        }
+
+    previous = {key: os.environ.get(key) for key in overrides}
+    try:
+        os.environ.update(overrides)
+        yield
+    finally:
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
+
+def _normalize_scan_profile(value: str) -> ScanProfile:
+    if value == "full":
+        return "slow"
+    if value in {"fast", "slow"}:
+        return value
+    raise ValueError(f"Unsupported scan profile: {value}")
+
+
+def _scan_profile_label(profile: ScanProfile) -> str:
+    if profile == "fast":
+        return "fast"
+    return "full"
+
+
+@contextmanager
+def _batch_progress(*, total: int):
+    console = Console(stderr=True)
+    with Progress(
+        SpinnerColumn(style=_ACCENT),
+        TextColumn("[white]{task.description}"),
+        BarColumn(
+            bar_width=28,
+            complete_style=_ACCENT,
+            finished_style=_ACCENT,
+        ),
+        TaskProgressColumn(),
+        TimeElapsedColumn(),
+        console=console,
+        transient=False,
+    ) as progress:
+        task = progress.add_task("Running batch upload", total=total)
+
+        class BatchProgress:
+            completed = 0
+
+            def advance(self, *, status: str) -> None:
+                self.completed += 1
+                progress.update(
+                    task,
+                    description=f"Processed {self.completed}/{total}: {status}",
+                    advance=1,
+                )
+
+        yield BatchProgress()
 
 
 def _run_pipeline(args: argparse.Namespace, *, skill_path: str | None = None):

@@ -86,7 +86,7 @@ export APTITUDE_ADMIN_TOKEN=admin-token
 aptitude-publisher admin-batch-upload /path/to/skill-a /path/to/skill-b --intent create_skill
 ```
 
-Batch upload runs local scans and uploads in the background, then prints only a final summary. When an admin token is set, the guided wizard also offers a batch-upload path that accepts one directory containing skill folders.
+Batch upload runs local scans and uploads in the background with a visible progress bar, then prints only a final summary. It defaults to `--scan-profile fast`, `--trust-tier verified`, and `--artifact-origin verified`; pass `--scan-profile full` for deeper pre-upload checks. When an admin token is set, the guided wizard also offers a batch-upload path that accepts one directory containing skill folders and starts immediately with those defaults.
 
 Publish a new version of an existing skill:
 
