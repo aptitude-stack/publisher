@@ -1,4 +1,0 @@
-interface:
-  display_name: "Clean Code"
-  short_description: "Refactor after tests pass"
-  default_prompt: "Use $clean-code to refactor this code while preserving behavior."

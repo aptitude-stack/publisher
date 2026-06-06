@@ -1,4 +1,0 @@
-interface:
-  display_name: "pytest"
-  short_description: "Design and debug pytest tests"
-  default_prompt: "Use $pytest to design or debug focused pytest tests."
