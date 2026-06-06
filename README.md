@@ -70,6 +70,11 @@ Publishing requires a registry publish token:
 export APTITUDE_PUBLISH_TOKEN=your-publish-token
 ```
 
+`aptitude-publisher publish` validates this token and checks `create_skill`
+slug availability before running local scans, security checks, performance
+evaluations, or bundle creation. Use `inspect` or `publish --dry-run` when you
+want local validation without an upload token.
+
 The default registry URL is `http://127.0.0.1:8000`. Override it for production or self-hosted registries:
 
 ```bash
@@ -87,6 +92,10 @@ Admin batch upload requires an admin-scoped registry token:
 ```bash
 export APTITUDE_ADMIN_TOKEN=your-admin-token
 ```
+
+`admin-batch-upload` validates the admin token and blocks existing
+`create_skill` slugs before each worker runs expensive local checks unless
+`--dry-run` is set.
 
 ## Packaging And Publishing
 

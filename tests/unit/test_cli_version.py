@@ -14,6 +14,7 @@ from publisher.app.cli import (
     _run_admin_batch_upload,
     main,
 )
+from publisher.registry.client import ExistingSkill, ExistingSkillVersion
 
 
 def test_publisher_cli_version_is_available() -> None:
@@ -100,6 +101,10 @@ def test_admin_batch_upload_requires_token_for_upload(
     monkeypatch.delenv("APTITUDE_ADMIN_TOKEN", raising=False)
     monkeypatch.delenv("APTITUDE_REGISTRY_ADMIN_TOKEN", raising=False)
     monkeypatch.delenv("REGISTRY_ADMIN_TOKEN", raising=False)
+    monkeypatch.setattr(
+        "publisher.app.cli._upload_one_batch_skill",
+        lambda *args, **kwargs: pytest.fail("batch upload should fail before workers"),
+    )
 
     assert main(["admin-batch-upload", "skills/a"]) == 1
 
@@ -182,6 +187,83 @@ def test_admin_batch_upload_uses_fast_scan_environment_by_default(
     }
 
 
+def test_publish_requires_token_before_pipeline(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr("publisher.app.cli._load_local_env_defaults", lambda: None)
+    monkeypatch.delenv("APTITUDE_PUBLISH_TOKEN", raising=False)
+    monkeypatch.delenv("APTITUDE_INTEGRATION_PUBLISH_TOKEN", raising=False)
+    monkeypatch.delenv("PUBLISH_TOKEN", raising=False)
+    monkeypatch.setattr(
+        "publisher.app.cli._run_pipeline",
+        lambda *args, **kwargs: pytest.fail("publish should fail before the pipeline"),
+    )
+
+    assert main(["publish", "skills/a"]) == 1
+
+    output = capsys.readouterr().out
+    assert "Missing publish token" in output
+    assert "APTITUDE_PUBLISH_TOKEN" in output
+    assert "APTITUDE_INTEGRATION_PUBLISH_TOKEN" in output
+    assert "PUBLISH_TOKEN" in output
+
+
+def test_publish_blocks_existing_create_slug_before_pipeline(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    skill_dir = _write_skill(tmp_path, name="python-patterns", intent="create_skill")
+    monkeypatch.setattr("publisher.app.cli._load_local_env_defaults", lambda: None)
+    monkeypatch.setenv("APTITUDE_PUBLISH_TOKEN", "publish-token")
+    monkeypatch.setattr(
+        "publisher.app.cli.get_existing_skill",
+        lambda **kwargs: ExistingSkill(
+            slug="python-patterns",
+            versions=(ExistingSkillVersion(version="1.0.0"),),
+        ),
+    )
+    monkeypatch.setattr(
+        "publisher.app.cli._run_pipeline",
+        lambda *args, **kwargs: pytest.fail("publish should fail before the pipeline"),
+    )
+
+    assert main(["publish", str(skill_dir)]) == 1
+
+    output = capsys.readouterr().out
+    assert "Existing Slug Check" in output
+    assert "this slug already exists" in output
+
+
+def test_admin_batch_blocks_existing_create_slug_before_pipeline(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    skill_dir = _write_skill(tmp_path, name="python-patterns", intent="create_skill")
+    monkeypatch.setattr("publisher.app.cli._load_local_env_defaults", lambda: None)
+    monkeypatch.setenv("APTITUDE_ADMIN_TOKEN", "admin-token")
+    monkeypatch.setattr(
+        "publisher.app.cli.get_existing_skill",
+        lambda **kwargs: ExistingSkill(
+            slug="python-patterns",
+            versions=(ExistingSkillVersion(version="1.0.0"),),
+        ),
+    )
+    monkeypatch.setattr(
+        "publisher.app.cli._run_pipeline",
+        lambda *args, **kwargs: pytest.fail("batch upload should fail before the pipeline"),
+    )
+
+    assert main(["admin-batch-upload", str(skill_dir)]) == 1
+
+    output = capsys.readouterr().out
+    assert "Admin Batch Upload" in output
+    assert "blocked" in output
+    assert "slug already exists" in output
+
+
 def test_admin_batch_upload_progress_bar_is_persistent(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -226,3 +308,24 @@ def _pyproject_version() -> str:
     pyproject_path = Path(__file__).resolve().parents[2] / "pyproject.toml"
     data = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
     return str(data["project"]["version"])
+
+
+def _write_skill(tmp_path: Path, *, name: str, intent: str) -> Path:
+    skill_dir = tmp_path / name
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        f"""---
+name: {name}
+description: "Use when testing publisher preflight behavior."
+metadata:
+  version: 0.1.0
+  intent: {intent}
+---
+
+# {name}
+
+Use this skill for publisher unit tests.
+""",
+        encoding="utf-8",
+    )
+    return skill_dir

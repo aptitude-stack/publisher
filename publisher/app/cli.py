@@ -11,7 +11,7 @@ import os
 import sys
 import tomllib
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from rich import box
 from rich.console import Console, Group
@@ -28,6 +28,7 @@ from rich.table import Table
 
 from publisher.artifacts.bundle import build_bundle_bytes
 from publisher.app.pipeline import PublisherPipeline
+from publisher.frontmatter import parse_skill_markdown
 from publisher.registry.client import (
     ExistingSkill,
     RegistryLookupUnavailable,
@@ -46,6 +47,21 @@ _TEXT_BODY = "white"
 _TEXT_MUTED = "grey70"
 _BORDER_PRIMARY = "grey27"
 _ACCENT = "#8fa3ad"
+_PUBLISH_TOKEN_ENV_NAMES = (
+    "APTITUDE_PUBLISH_TOKEN",
+    "APTITUDE_INTEGRATION_PUBLISH_TOKEN",
+    "PUBLISH_TOKEN",
+)
+_ADMIN_TOKEN_ENV_NAMES = (
+    "APTITUDE_ADMIN_TOKEN",
+    "APTITUDE_REGISTRY_ADMIN_TOKEN",
+    "REGISTRY_ADMIN_TOKEN",
+)
+_READ_TOKEN_ENV_NAMES = (
+    "APTITUDE_READ_TOKEN",
+    "APTITUDE_REGISTRY_READ_TOKEN",
+    "REGISTRY_READ_TOKEN",
+)
 ScanProfile = Literal["fast", "slow"]
 
 
@@ -220,18 +236,24 @@ def _run_inspect(args: argparse.Namespace) -> int:
 
 
 def _run_publish(args: argparse.Namespace) -> int:
+    if not args.dry_run and not _has_env_value(args.token):
+        print("\n" + _missing_publish_token_message())
+        return 1
+
+    if not args.dry_run and _print_existing_slug_preflight_block_if_needed(
+        registry_url=args.registry_url,
+        token=_relationship_check_token(args.token),
+        skill_path=args.skill_path,
+        slug_override=args.slug,
+        intent_override=args.intent,
+    ):
+        return 1
+
     context = _run_pipeline(args)
     _print_pipeline_report(context)
     if not _publish_payload_ready(context) or context.ranking.publish_decision == "block":
         print("\nPublish blocked before registry upload.")
         _print_gate_failures(context)
-        return 1
-
-    if not args.dry_run and not args.token:
-        print(
-            "\nMissing publish token. Pass --token or set APTITUDE_PUBLISH_TOKEN "
-            "or PUBLISH_TOKEN."
-        )
         return 1
 
     if not args.dry_run and _print_existing_slug_block_if_needed(
@@ -292,12 +314,26 @@ class BatchUploadResult:
     message: str | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class PreflightIdentity:
+    """Minimal skill identity read before running expensive evaluator stages."""
+
+    slug: str | None
+    intent: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class ExistingSlugBlock:
+    """Reason a create-skill upload cannot continue before full inspection."""
+
+    slug: str
+    message: str
+    existing_skill: ExistingSkill | None = None
+
+
 def _run_admin_batch_upload(args: argparse.Namespace) -> int:
-    if not args.dry_run and not args.admin_token:
-        print(
-            "\nMissing admin token. Pass --admin-token or set APTITUDE_ADMIN_TOKEN, "
-            "APTITUDE_REGISTRY_ADMIN_TOKEN, or REGISTRY_ADMIN_TOKEN."
-        )
+    if not args.dry_run and not _has_env_value(args.admin_token):
+        print("\n" + _missing_admin_token_message())
         return 1
 
     concurrency = max(1, min(args.concurrency, len(args.skill_paths)))
@@ -345,6 +381,27 @@ def _upload_one_batch_skill(
     skill_path: str,
     args: argparse.Namespace,
 ) -> BatchUploadResult:
+    if not args.dry_run:
+        identity = _preflight_identity_from_skill_path(
+            skill_path=skill_path,
+            slug_override=None,
+            intent_override=args.intent,
+        )
+        block = _check_existing_slug_block(
+            registry_url=args.registry_url,
+            token=args.admin_token,
+            slug=identity.slug,
+            intent=identity.intent,
+        )
+        if block is not None:
+            return BatchUploadResult(
+                index=index,
+                path=skill_path,
+                slug=block.slug,
+                status="blocked",
+                message=block.message,
+            )
+
     try:
         context = _run_pipeline(args, skill_path=skill_path)
     except Exception as exc:
@@ -774,17 +831,88 @@ def _print_existing_slug_block_if_needed(
     if not slug:
         return False
 
+    return _print_existing_slug_block(
+        registry_url=registry_url,
+        token=token,
+        slug=slug,
+        intent=intent,
+    )
+
+
+def _print_existing_slug_preflight_block_if_needed(
+    *,
+    registry_url: str,
+    token: str | None,
+    skill_path: str,
+    slug_override: str | None,
+    intent_override: str | None,
+) -> bool:
+    identity = _preflight_identity_from_skill_path(
+        skill_path=skill_path,
+        slug_override=slug_override,
+        intent_override=intent_override,
+    )
+    if not identity.slug:
+        return False
+    return _print_existing_slug_block(
+        registry_url=registry_url,
+        token=token,
+        slug=identity.slug,
+        intent=identity.intent,
+    )
+
+
+def _print_existing_slug_block(
+    *,
+    registry_url: str,
+    token: str | None,
+    slug: str,
+    intent: str | None,
+) -> bool:
+    if intent != "create_skill":
+        return False
+
     print("\n" + _separator())
     print("Existing Slug Check")
     print(_separator())
-    if not token:
-        print(
-            "Publish blocked: cannot verify slug uniqueness without a read or publish token."
-        )
-        print(
-            "Set APTITUDE_READ_TOKEN, REGISTRY_READ_TOKEN, or APTITUDE_PUBLISH_TOKEN."
-        )
+    block = _check_existing_slug_block(
+        registry_url=registry_url,
+        token=token,
+        slug=slug,
+        intent=intent,
+    )
+    if block is None:
+        print(f"slug           {slug}")
+        print("status         available")
+        return False
+
+    print(block.message)
+    if block.existing_skill is None:
         return True
+
+    for label, value in _existing_skill_lines(block.existing_skill):
+        print(f"{label:<14} {value}")
+    return True
+
+
+def _check_existing_slug_block(
+    *,
+    registry_url: str,
+    token: str | None,
+    slug: str | None,
+    intent: str | None,
+) -> ExistingSlugBlock | None:
+    if intent != "create_skill" or not slug:
+        return None
+    if not token:
+        return ExistingSlugBlock(
+            slug=slug,
+            message=(
+                "Publish blocked: cannot verify slug uniqueness without a read or "
+                "publish token.\nSet APTITUDE_READ_TOKEN, REGISTRY_READ_TOKEN, "
+                "or APTITUDE_PUBLISH_TOKEN."
+            ),
+        )
 
     try:
         existing = get_existing_skill(
@@ -793,19 +921,68 @@ def _print_existing_slug_block_if_needed(
             slug=slug,
         )
     except RegistryLookupUnavailable as exc:
-        print(f"Publish blocked: cannot verify whether slug {slug!r} exists.")
-        print(f"reason         {exc}")
-        return True
+        return ExistingSlugBlock(
+            slug=slug,
+            message=(
+                f"Publish blocked: cannot verify whether slug {slug!r} exists.\n"
+                f"reason         {exc}"
+            ),
+        )
 
     if not _should_block_existing_slug(intent=intent, existing_skill=existing):
-        print(f"slug           {slug}")
-        print("status         available")
-        return False
+        return None
 
-    print("Publish blocked: this slug already exists in the registry.")
-    for label, value in _existing_skill_lines(existing):
-        print(f"{label:<14} {value}")
-    return True
+    return ExistingSlugBlock(
+        slug=slug,
+        message="Publish blocked: this slug already exists in the registry.",
+        existing_skill=existing,
+    )
+
+
+def _preflight_identity_from_skill_path(
+    *,
+    skill_path: str,
+    slug_override: str | None,
+    intent_override: str | None,
+) -> PreflightIdentity:
+    slug = _string_or_none(slug_override)
+    intent = _string_or_none(intent_override)
+    if slug and intent:
+        return PreflightIdentity(slug=slug, intent=intent)
+
+    frontmatter = _read_skill_frontmatter_for_preflight(skill_path)
+    metadata = frontmatter.get("metadata", {}) if isinstance(frontmatter, dict) else {}
+    if not isinstance(metadata, dict):
+        metadata = {}
+
+    return PreflightIdentity(
+        slug=slug or _string_or_none(frontmatter.get("name")),
+        intent=intent or _string_or_none(metadata.get("intent")),
+    )
+
+
+def _read_skill_frontmatter_for_preflight(skill_path: str) -> dict[str, Any]:
+    skill_file = _resolve_skill_file(Path(skill_path))
+    try:
+        frontmatter, _body = parse_skill_markdown(skill_file.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return frontmatter
+
+
+def _resolve_skill_file(path: Path) -> Path:
+    if path.is_dir():
+        return path / "SKILL.md"
+    if path.name == "SKILL.md":
+        return path
+    return path.parent / "SKILL.md"
+
+
+def _string_or_none(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    stripped = value.strip()
+    return stripped or None
 
 
 def _should_block_existing_slug(
@@ -1017,28 +1194,49 @@ def _default_registry_url() -> str:
 
 
 def _default_publish_token() -> str | None:
-    return (
-        os.environ.get("APTITUDE_PUBLISH_TOKEN")
-        or os.environ.get("APTITUDE_INTEGRATION_PUBLISH_TOKEN")
-        or os.environ.get("PUBLISH_TOKEN")
-    )
+    return _first_env_value(_PUBLISH_TOKEN_ENV_NAMES)
 
 
 def _default_admin_token() -> str | None:
-    return (
-        os.environ.get("APTITUDE_ADMIN_TOKEN")
-        or os.environ.get("APTITUDE_REGISTRY_ADMIN_TOKEN")
-        or os.environ.get("REGISTRY_ADMIN_TOKEN")
-    )
+    return _first_env_value(_ADMIN_TOKEN_ENV_NAMES)
 
 
 def _relationship_check_token(publish_token: str | None) -> str | None:
-    return (
-        os.environ.get("APTITUDE_READ_TOKEN")
-        or os.environ.get("APTITUDE_REGISTRY_READ_TOKEN")
-        or os.environ.get("REGISTRY_READ_TOKEN")
-        or publish_token
+    return _first_env_value(_READ_TOKEN_ENV_NAMES) or (
+        publish_token if _has_env_value(publish_token) else None
     )
+
+
+def _first_env_value(names: tuple[str, ...]) -> str | None:
+    for name in names:
+        value = os.environ.get(name)
+        if _has_env_value(value):
+            return value
+    return None
+
+
+def _has_env_value(value: str | None) -> bool:
+    return bool(value and value.strip())
+
+
+def _missing_publish_token_message() -> str:
+    return (
+        "Missing publish token. Pass --token or set "
+        f"{_format_env_names(_PUBLISH_TOKEN_ENV_NAMES)}."
+    )
+
+
+def _missing_admin_token_message() -> str:
+    return (
+        "Missing admin token. Pass --admin-token or set "
+        f"{_format_env_names(_ADMIN_TOKEN_ENV_NAMES)}."
+    )
+
+
+def _format_env_names(names: tuple[str, ...]) -> str:
+    if len(names) == 1:
+        return names[0]
+    return ", ".join(names[:-1]) + f", or {names[-1]}"
 
 
 if __name__ == "__main__":

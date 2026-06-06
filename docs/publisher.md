@@ -10,6 +10,13 @@ runs the normal publisher pipeline for each skill concurrently. It uses an
 admin-scoped registry token from `--admin-token`, `APTITUDE_ADMIN_TOKEN`,
 `APTITUDE_REGISTRY_ADMIN_TOKEN`, or `REGISTRY_ADMIN_TOKEN`.
 
+Upload commands fail before local scans when their required upload token is
+missing or blank. For `create_skill`, they also check slug availability before
+LLM Guard, Upskill, bundle creation, or upload work begins. `publish_version`
+keeps running when the slug exists because that is the expected versioning path.
+`publish --dry-run` and `admin-batch-upload --dry-run` still run locally without
+upload credentials.
+
 Batch mode intentionally suppresses per-skill pipeline reports. Local scans,
 bundle creation, duplicate checks, and uploads run in the background with a
 visible progress bar; the CLI prints one final summary with status, HTTP code,

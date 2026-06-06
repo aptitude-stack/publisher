@@ -19,25 +19,25 @@ from rich.text import Text
 
 from publisher.artifacts.bundle import build_bundle_bytes
 from publisher.app.cli import (
+    _check_existing_slug_block,
     _default_admin_token,
     _default_publish_token,
     _default_registry_url,
     _existing_skill_lines,
     _load_local_env_defaults,
+    _missing_publish_token_message,
+    _preflight_identity_from_skill_path,
     _publisher_cli_version,
     _registry_result_lines,
     _relationship_alert_lines,
     _relationship_check_token,
     _run_admin_batch_upload,
     _scan_profile_environment,
-    _should_block_existing_slug,
 )
 from publisher.app.pipeline import PublisherPipeline
 from publisher.domain.models import PublishContext
 from publisher.registry.client import (
-    RegistryLookupUnavailable,
     check_relationship_references,
-    get_existing_skill,
     publish_to_registry,
 )
 
@@ -493,6 +493,23 @@ def _render_batch_upload_plan(*, skills_directory: Path, skill_paths: Sequence[s
 
 
 def _execute_plan(plan: PublishPlan) -> int:
+    publish_token = _default_publish_token()
+    if plan.action == "publish" and not publish_token:
+        CONSOLE.print(
+            _frame(
+                _missing_publish_token_message(),
+                title="Missing publish token",
+                border_style="red",
+            )
+        )
+        return 1
+
+    if plan.action == "publish" and _render_existing_slug_preflight_block_if_needed(
+        plan=plan,
+        token=_relationship_check_token(publish_token),
+    ):
+        return 1
+
     with _activity("Running publisher pipeline"):
         context = _run_pipeline(plan)
     _render_pipeline_report(context)
@@ -512,7 +529,6 @@ def _execute_plan(plan: PublishPlan) -> int:
         )
         return 1
 
-    publish_token = _default_publish_token()
     lookup_token = _relationship_check_token(publish_token)
     if _render_existing_slug_block_if_needed(context=context, token=lookup_token):
         return 1
@@ -535,16 +551,6 @@ def _execute_plan(plan: PublishPlan) -> int:
     if not _confirm("Upload this skill to the registry?", default=False, allow_back=True):
         CONSOLE.print("[grey70]Upload cancelled.[/grey70]")
         return 0
-
-    if not publish_token:
-        CONSOLE.print(
-            _frame(
-                "Set APTITUDE_PUBLISH_TOKEN or PUBLISH_TOKEN before publishing.",
-                title="Missing publish token",
-                border_style="red",
-            )
-        )
-        return 1
 
     with _activity("Uploading bundle to registry"):
         result = publish_to_registry(
@@ -869,51 +875,59 @@ def _render_existing_slug_block_if_needed(
     context: PublishContext,
     token: str | None,
 ) -> bool:
-    if context.identity.intent != "create_skill":
-        return False
-
-    slug = context.identity.slug
-    if not slug:
-        return False
-
-    if not token:
-        CONSOLE.print(
-            _frame(
-                "Publish blocked: cannot verify slug uniqueness without a read or "
-                "publish token.\n\nSet APTITUDE_READ_TOKEN, REGISTRY_READ_TOKEN, "
-                "or APTITUDE_PUBLISH_TOKEN.",
-                title="Existing Slug Check",
-                border_style="red",
-            )
-        )
-        return True
-
-    try:
-        existing = get_existing_skill(
-            registry_url=_default_registry_url(),
-            token=token,
-            slug=slug,
-        )
-    except RegistryLookupUnavailable as exc:
-        CONSOLE.print(
-            _frame(
-                f"Publish blocked: cannot verify whether slug {slug!r} exists.\n\n{exc}",
-                title="Existing Slug Check",
-                border_style="red",
-            )
-        )
-        return True
-
-    if not _should_block_existing_slug(
+    return _render_existing_slug_block(
+        slug=context.identity.slug,
         intent=context.identity.intent,
-        existing_skill=existing,
-    ):
+        token=token,
+    )
+
+
+def _render_existing_slug_preflight_block_if_needed(
+    *,
+    plan: PublishPlan,
+    token: str | None,
+) -> bool:
+    identity = _preflight_identity_from_skill_path(
+        skill_path=str(plan.skill_path),
+        slug_override=plan.slug,
+        intent_override=plan.intent,
+    )
+    return _render_existing_slug_block(
+        slug=identity.slug,
+        intent=identity.intent,
+        token=token,
+    )
+
+
+def _render_existing_slug_block(
+    *,
+    slug: str | None,
+    intent: str | None,
+    token: str | None,
+) -> bool:
+    block = _check_existing_slug_block(
+        registry_url=_default_registry_url(),
+        token=token,
+        slug=slug,
+        intent=intent,
+    )
+    if block is None:
         return False
+
+    if block.existing_skill is None:
+        CONSOLE.print(
+            _frame(
+                block.message,
+                title="Existing Slug Check",
+                border_style="red",
+            )
+        )
+        return True
 
     table = Table.grid(expand=True, padding=(0, 2))
     table.add_column(style=THEME.text_muted, no_wrap=True)
     table.add_column(style=THEME.text_body)
-    for label, value in _existing_skill_lines(existing):
+    for label, value in _existing_skill_lines(block.existing_skill):
         table.add_row(label.title(), value)
     CONSOLE.print(
         _frame(

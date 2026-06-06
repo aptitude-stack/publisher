@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from publisher.app import menu
+from publisher.registry.client import ExistingSkill, ExistingSkillVersion
 
 
 class _AsciiStream:
@@ -117,3 +118,80 @@ def test_batch_upload_wizard_expands_directory_into_skill_paths(
         "trust_tier": "verified",
         "artifact_origin": "verified",
     }
+
+
+def test_publish_plan_requires_token_before_pipeline(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.delenv("APTITUDE_PUBLISH_TOKEN", raising=False)
+    monkeypatch.delenv("APTITUDE_INTEGRATION_PUBLISH_TOKEN", raising=False)
+    monkeypatch.delenv("PUBLISH_TOKEN", raising=False)
+    monkeypatch.setattr(
+        menu,
+        "_run_pipeline",
+        lambda *args, **kwargs: pytest.fail("publish should fail before the pipeline"),
+    )
+
+    plan = menu.PublishPlan(
+        action="publish",
+        skill_path=tmp_path,
+        slug=None,
+        intent="create_skill",
+        trust_tier="untrusted",
+        namespace="public",
+        artifact_origin="internal",
+        policy_pack_slug=None,
+        publisher_identity=None,
+        scan_profile="fast",
+    )
+
+    assert menu._execute_plan(plan) == 1
+
+
+def test_publish_plan_blocks_existing_create_slug_before_pipeline(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    skill_dir = tmp_path / "python-patterns"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        """---
+name: python-patterns
+description: "Use when testing publisher preflight behavior."
+metadata:
+  version: 0.1.0
+  intent: create_skill
+---
+
+# python-patterns
+
+Use this skill for publisher unit tests.
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("APTITUDE_PUBLISH_TOKEN", "publish-token")
+    monkeypatch.setattr(
+        "publisher.app.cli.get_existing_skill",
+        lambda **kwargs: ExistingSkill(
+            slug="python-patterns",
+            versions=(ExistingSkillVersion(version="1.0.0"),),
+        ),
+    )
+    monkeypatch.setattr(
+        menu,
+        "_run_pipeline",
+        lambda *args, **kwargs: pytest.fail("publish should fail before the pipeline"),
+    )
+
+    plan = menu.PublishPlan(
+        action="publish",
+        skill_path=skill_dir,
+        slug=None,
+        intent="create_skill",
+        trust_tier="untrusted",
+        namespace="public",
+        artifact_origin="internal",
+        policy_pack_slug=None,
+        publisher_identity=None,
+        scan_profile="fast",
+    )
+
+    assert menu._execute_plan(plan) == 1
