@@ -53,6 +53,18 @@ def test_root_help_still_prints_cli_help(capsys: pytest.CaptureFixture[str]) -> 
     assert "usage: aptitude-publisher" in capsys.readouterr().out
 
 
+def test_mcp_subcommand_runs_stdio_entrypoint(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[bool] = []
+    monkeypatch.setattr("publisher.app.cli._load_local_env_defaults", lambda: None)
+    monkeypatch.setattr(
+        "publisher.interfaces.mcp.main.main",
+        lambda: calls.append(True),
+    )
+
+    assert main(["mcp"]) == 0
+    assert calls == [True]
+
+
 def test_menu_subcommand_is_not_registered() -> None:
     parser = _build_parser()
 

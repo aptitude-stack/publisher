@@ -23,6 +23,7 @@ Primary commands:
 - `aptitude-publisher inspect /path/to/skill`
 - `aptitude-publisher publish /path/to/skill`
 - `aptitude-publisher admin-batch-upload /path/to/skill-a /path/to/skill-b`
+- `aptitude-publisher mcp`
 
 Running `aptitude-publisher` without a subcommand launches the guided review-first wizard. `inspect` runs the full local pipeline and prints evaluation results without uploading. `publish` runs the same gates, builds the upload bundle, checks registry state when tokens are available, and uploads only when the publish decision allows it.
 `admin-batch-upload` runs the same local gates for multiple skill folders concurrently with the fast scan profile and verified trust defaults, uploads each accepted skill with an admin token, shows a progress bar, and prints only a final summary.
@@ -60,6 +61,53 @@ For one-off execution without a persistent install:
 
 ```bash
 uvx aptitude-publisher --help
+```
+
+## MCP Server
+
+The PyPI package includes a local stdio MCP server for agent hosts. Run the
+published package without a persistent install:
+
+```bash
+uvx aptitude-publisher mcp
+```
+
+An installed package also exposes the direct `aptitude-publisher-mcp` command.
+Both commands wait for MCP protocol messages; they are not interactive terminal
+interfaces.
+
+Example MCP client configuration:
+
+```json
+{
+  "mcpServers": {
+    "aptitude-publisher": {
+      "command": "uvx",
+      "args": ["aptitude-publisher", "mcp"],
+      "env": {
+        "APTITUDE_PUBLISH_TOKEN": "replace-with-publish-token"
+      }
+    }
+  }
+}
+```
+
+The server exposes:
+
+- `aptitude_publisher_inspect_skill`: runs the full local evaluation pipeline
+  and writes trace files below the skill's `.publisher_artifacts/` directory.
+- `aptitude_publisher_publish_skill`: reruns evaluation and uploads only when
+  the caller supplies an explicit slug, intent, and `confirm_upload=true`.
+
+Use inspect first, review its validation, security, performance, ranking, and
+identity result, then ask for confirmation before publish. Publish credentials
+come only from the publisher environment variables; they are never MCP tool
+arguments or response fields. Admin batch upload is not exposed through MCP.
+
+Test the local checkout with MCP Inspector:
+
+```bash
+bunx @modelcontextprotocol/inspector uv --directory "$PWD" run aptitude-publisher-mcp
 ```
 
 ## Registry Access
@@ -106,6 +154,7 @@ The packaging metadata lives in `pyproject.toml`:
 - `[project]` defines the package name, version, dependencies, and console entry point
 - `[project].readme` points at `PYPI.md`, which is the public project description rendered on PyPI
 - `[project.scripts]` exposes `aptitude-publisher`, mapped to `publisher.app.cli:main`
+- `[project.scripts]` exposes `aptitude-publisher-mcp`, mapped to `publisher.interfaces.mcp.main:main`
 - `[build-system]` tells `uv` to build the package with setuptools
 
 Build the package artifacts locally:

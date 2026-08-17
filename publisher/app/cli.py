@@ -87,6 +87,11 @@ def main(argv: list[str] | None = None) -> int:
         return _run_publish(args)
     if args.command == "admin-batch-upload":
         return _run_admin_batch_upload(args)
+    if args.command == "mcp":
+        from publisher.interfaces.mcp.main import main as run_mcp_server
+
+        run_mcp_server()
+        return 0
 
     parser.error(f"Unknown command: {args.command}")
     return 2
@@ -177,6 +182,11 @@ def _build_parser(prog: str = _DEFAULT_PROG) -> argparse.ArgumentParser:
         choices=("fast", "full"),
         default="fast",
         help="local scan profile for every skill; default: fast",
+    )
+
+    subparsers.add_parser(
+        "mcp",
+        help="run the local stdio MCP server",
     )
 
     return parser

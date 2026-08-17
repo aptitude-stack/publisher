@@ -28,6 +28,7 @@ uvx aptitude-publisher --help
 The package installs this console command:
 
 - `aptitude-publisher`
+- `aptitude-publisher-mcp`
 
 ---
 
@@ -50,6 +51,41 @@ Relationship and existing-skill checks can also use a read token:
 ```bash
 export APTITUDE_READ_TOKEN=reader-token
 ```
+
+---
+
+## MCP Server
+
+Run the local stdio MCP server directly from PyPI:
+
+```bash
+uvx aptitude-publisher mcp
+```
+
+For a persistent installation, use `aptitude-publisher mcp` or the direct
+`aptitude-publisher-mcp` executable. The process waits for an MCP host; it does
+not display the guided terminal wizard.
+
+```json
+{
+  "mcpServers": {
+    "aptitude-publisher": {
+      "command": "uvx",
+      "args": ["aptitude-publisher", "mcp"],
+      "env": {
+        "APTITUDE_PUBLISH_TOKEN": "replace-with-publish-token"
+      }
+    }
+  }
+}
+```
+
+`aptitude_publisher_inspect_skill` runs the local evaluation pipeline and writes
+`.publisher_artifacts/` trace files. `aptitude_publisher_publish_skill` reruns
+that evaluation and can mutate registry state, so it requires an explicit slug,
+publish intent, and `confirm_upload=true`. Credentials are read only from the
+server environment and are never accepted as tool inputs. Admin batch upload
+and remote HTTP transport are outside the MCP v1 surface.
 
 ---
 

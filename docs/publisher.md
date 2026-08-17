@@ -3,6 +3,28 @@
 The publisher prepares a local skill folder, evaluates it, builds the registry
 payload, and uploads a deterministic `.tar.zst` bundle.
 
+## MCP Interface
+
+The package includes a local stdio server launched with
+`uvx aptitude-publisher mcp`, `aptitude-publisher mcp`, or the direct
+`aptitude-publisher-mcp` entrypoint. It is a thin adapter over the same
+`PublisherPipeline`, bundle builder, and registry client used by the CLI.
+
+The interface exposes two tools:
+
+- `aptitude_publisher_inspect_skill` runs the full evaluation pipeline. It is
+  not read-only because pipeline stages write `.publisher_artifacts/` below the
+  selected skill.
+- `aptitude_publisher_publish_skill` requires explicit `slug`, `intent`, and
+  `confirm_upload=true`, reruns evaluation, checks new-skill slug availability,
+  builds a fresh bundle, and uploads with environment-provided credentials.
+
+The publish tool accepts no token field. It uses the existing publish-token
+environment aliases and prefers the existing read-token aliases for duplicate
+and relationship checks. Blocked evaluation and bundle failures stop before
+registry upload. Admin batch upload, remote HTTP transport, and persistent MCP
+state are intentionally deferred.
+
 ## Admin Batch Upload
 
 `aptitude-publisher admin-batch-upload` accepts multiple skill folder paths and
