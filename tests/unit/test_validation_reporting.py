@@ -14,9 +14,17 @@ def test_description_with_subject_and_use_when_passes_trigger_guidance() -> None
     assert ValidationStage()._has_trigger_guidance(description)
 
 
-def test_report_separates_publish_readiness_from_structure_validation() -> None:
+def test_report_merges_publish_readiness_into_structure_validation() -> None:
     context = PublishContext(source=SkillSource(file_path="skills/example"))
     context.validation.passed = True
+    context.validation.checks_run = [
+        "skill_root_exists",
+        "skill_md_present",
+        "yaml_frontmatter_present",
+        "body_instructions_heading",
+        "relationships_frontmatter_shape",
+        "llm_skill_contract_validation",
+    ]
     context.add_gate_result(gate_name="discovery_gate", passed=True)
     context.add_gate_result(gate_name="validation_gate", passed=True)
     context.add_gate_result(
@@ -28,16 +36,20 @@ def test_report_separates_publish_readiness_from_structure_validation() -> None:
     phase_rows = dict((phase, (grade, reason)) for phase, grade, reason in _report_phase_rows(context))
     sections = dict(_report_detail_sections(context))
 
-    assert phase_rows["Structure"][0] == "passed"
-    assert phase_rows["Readiness"] == ("failed", "Identity did not extract a version.")
-    assert sections["Structure Validation"] == [("Status", "passed")]
-    assert sections["Publish Readiness"] == [
+    assert phase_rows["Structure"] == ("failed", "Identity did not extract a version.")
+    assert "Readiness" not in phase_rows
+    assert sections["Structure Validation"] == [
         ("Status", "failed"),
-        ("Issue", "Identity did not extract a version."),
+        (
+            "Validation coverage",
+            "6 checks: skill folder, SKILL.md, frontmatter, instructions, relationships, LLM contract",
+        ),
+        ("Issue 1", "Identity did not extract a version."),
     ]
+    assert "Publish Readiness" not in sections
 
 
-def test_report_marks_structure_not_evaluated_when_identity_stops_pipeline() -> None:
+def test_report_marks_identity_failure_as_structure_failure() -> None:
     context = PublishContext(source=SkillSource(file_path="skills/example"))
     context.add_gate_result(gate_name="discovery_gate", passed=True)
     context.add_gate_result(
@@ -48,7 +60,7 @@ def test_report_marks_structure_not_evaluated_when_identity_stops_pipeline() -> 
 
     phase_rows = dict((phase, (grade, reason)) for phase, grade, reason in _report_phase_rows(context))
 
-    assert phase_rows["Structure"] == ("not evaluated", "No structure checks were run.")
+    assert phase_rows["Structure"] == ("failed", "Identity did not extract a version.")
 
 
 def test_quality_results_exclude_derived_scores_and_final_scores_stay_separate() -> None:

@@ -764,25 +764,48 @@ def _evaluation_status(context, key: str) -> str:
 def _report_detail_sections(context) -> list[tuple[str, list[tuple[str, str]]]]:
     phase_rows = {phase: (grade, reason) for phase, grade, reason in _report_phase_rows(context)}
     structure_grade, structure_reason = phase_rows["Structure"]
-    readiness_grade, readiness_reason = phase_rows["Readiness"]
     risk_grade, risk_reason = phase_rows["Risk"]
     quality_grade, quality_reason = phase_rows["Quality"]
 
+    structure_gates = _phase_gates(
+        context,
+        {"discovery_gate", "identity_gate", "metadata_gate", "validation_gate"},
+    )
+    structure_issues = list(
+        dict.fromkeys(
+            [
+                *context.validation.errors,
+                *(issue for gate in structure_gates for issue in gate.blocking_issues),
+            ]
+        )
+    )
+    structure_warnings = list(
+        dict.fromkeys(
+            [
+                *context.validation.warnings,
+                *(warning for gate in structure_gates for warning in gate.warnings),
+            ]
+        )
+    )
     structure_rows = [("Status", structure_grade)]
+    if context.validation.checks_run:
+        structure_rows.append(
+            (
+                "Validation coverage",
+                f"{len(context.validation.checks_run)} checks: skill folder, SKILL.md, "
+                "frontmatter, instructions, relationships, LLM contract",
+            )
+        )
     structure_rows.extend(
         (f"Issue {index}", issue)
-        for index, issue in enumerate(context.validation.errors, start=1)
+        for index, issue in enumerate(structure_issues, start=1)
     )
     structure_rows.extend(
         (f"Warning {index}", warning)
-        for index, warning in enumerate(context.validation.warnings, start=1)
+        for index, warning in enumerate(structure_warnings, start=1)
     )
-    if structure_grade == "failed" and not context.validation.errors:
+    if structure_grade == "failed" and not structure_issues:
         structure_rows.append(("Issue", structure_reason))
-
-    readiness_rows = [("Status", readiness_grade)]
-    if readiness_grade == "failed":
-        readiness_rows.append(("Issue", readiness_reason))
 
     risk_rows = [
         ("Decision", context.security.decision or risk_grade),
@@ -831,7 +854,6 @@ def _report_detail_sections(context) -> list[tuple[str, list[tuple[str, str]]]]:
 
     return [
         ("Structure Validation", structure_rows),
-        ("Publish Readiness", readiness_rows),
         ("Risk Validation", risk_rows),
         ("Quality Evaluation", quality_rows),
         ("Final Scores", final_score_rows),
@@ -847,8 +869,10 @@ def _format_score(value: float | None) -> str:
 
 def _report_phase_rows(context) -> list[tuple[str, str, str]]:
     """Return the user-facing evaluation phases without pipeline internals."""
-    structure_gates = _phase_gates(context, {"discovery_gate", "validation_gate"})
-    readiness_gates = _phase_gates(context, {"identity_gate", "metadata_gate"})
+    structure_gates = _phase_gates(
+        context,
+        {"discovery_gate", "identity_gate", "metadata_gate", "validation_gate"},
+    )
     risk_gates = _phase_gates(context, {"security_gate"})
     quality_gates = _phase_gates(context, {"performance_exam_gate"})
 
@@ -860,15 +884,6 @@ def _report_phase_rows(context) -> list[tuple[str, str, str]]:
     structure_grade = "failed" if structure_issue else ("passed" if validation_ran else "not evaluated")
     structure_reason = structure_issue or structure_warning or (
         "Structure checks passed." if validation_ran else "No structure checks were run."
-    )
-
-    readiness_issue = _first_gate_issue(readiness_gates)
-    readiness_warning = _first_gate_warning(readiness_gates)
-    readiness_grade = "failed" if readiness_issue else ("passed" if readiness_gates else "not evaluated")
-    readiness_reason = readiness_issue or readiness_warning or (
-        "Publish readiness checks passed."
-        if readiness_gates
-        else "No publish readiness checks were run."
     )
 
     risk_issue = _first_gate_issue(risk_gates) or _first_security_finding(context)
@@ -899,7 +914,6 @@ def _report_phase_rows(context) -> list[tuple[str, str, str]]:
 
     return [
         ("Structure", structure_grade, structure_reason),
-        ("Readiness", readiness_grade, readiness_reason),
         (
             "Risk",
             risk_grade,
