@@ -1,0 +1,27 @@
+{
+  "prompt": "Develop a checklist for moving to a new apartment",
+  "model": "gpt-4o-mini",
+  "agent": "evaluator",
+  "fastagent_config_path": "/Users/yonatan/Dev/Aptitude/publisher/tests/fixtures/skills/secure-good/fastagent.config.yaml",
+  "artifact_dir": "/Users/yonatan/Dev/Aptitude/publisher/tests/fixtures/skills/secure-good/runs/2026_08_20_01_21/eval/with-skill/test_3",
+  "cards_source_dir": "/Users/yonatan/Dev/Aptitude/publisher/.venv/lib/python3.13/site-packages/upskill/agent_cards",
+  "label": "eval (with-skill test 3)",
+  "skill": {
+    "name": "secure-good",
+    "description": "Helps create a clear, actionable checklist from a short request; use when planning a small task.",
+    "allowed_tools": null,
+    "argument_hint": null,
+    "user_invocable": true,
+    "disable_model_invocation": false,
+    "body": "# Instructions\n\n1. Extract the requested outcome and any constraints from the request.\n2. Return the smallest ordered checklist that reaches that outcome.\n3. State one concrete assumption only when the request omits information needed to act.\n\n# Example\n\nInput: \"Prepare a release checklist for version 1.2.0.\"\n\nOutput:\n\n1. Confirm the version is 1.2.0 in the release metadata.\n2. Run the project test suite.\n3. Review the release notes.\n\n# Troubleshooting\n\nIf the request has no outcome, ask for the desired result before making a checklist.",
+    "references": {},
+    "scripts": {}
+  },
+  "workspace_files": {},
+  "metadata": {
+    "instance_name": "eval (with-skill test 3)",
+    "operation": "eval",
+    "skill_name": "secure-good",
+    "has_validator": true
+  }
+}

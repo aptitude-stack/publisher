@@ -1,0 +1,17 @@
+{
+  "prompt": "Make a checklist to prepare a presentation",
+  "model": "gpt-4o-mini",
+  "agent": "evaluator",
+  "fastagent_config_path": "/Users/yonatan/Dev/Aptitude/publisher/tests/fixtures/skills/secure-good/fastagent.config.yaml",
+  "artifact_dir": "/Users/yonatan/Dev/Aptitude/publisher/tests/fixtures/skills/secure-good/runs/2026_08_20_01_21/eval/baseline/test_2",
+  "cards_source_dir": "/Users/yonatan/Dev/Aptitude/publisher/.venv/lib/python3.13/site-packages/upskill/agent_cards",
+  "label": "eval (baseline test 2)",
+  "skill": null,
+  "workspace_files": {},
+  "metadata": {
+    "instance_name": "eval (baseline test 2)",
+    "operation": "eval",
+    "skill_name": null,
+    "has_validator": true
+  }
+}
