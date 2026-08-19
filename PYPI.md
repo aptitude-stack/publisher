@@ -2,7 +2,7 @@
 
 [![PyPI](https://img.shields.io/badge/PyPI-aptitude--publisher-3775A9?style=for-the-badge&logo=pypi&logoColor=white)](https://pypi.org/project/aptitude-publisher/)
 [![GitHub](https://img.shields.io/badge/GitHub-repository-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/aptitude-stack/publisher)
-![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=for-the-badge&logo=python&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3.13-3776AB?style=for-the-badge&logo=python&logoColor=white)
 ![uv](https://img.shields.io/badge/uv-tooling-6E56CF?style=for-the-badge&logo=uv&logoColor=white)
 ![CLI](https://img.shields.io/badge/CLI-review--first-111111?style=for-the-badge)
 

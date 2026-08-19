@@ -83,21 +83,23 @@ references, and other text files. It checks for prompt injection, secrets, and
 hidden text before the skill can be published.
 
 Upskill evaluates publishable skills through official OpenAI by default. It
-requires explicit test cases and does not generate a generic fallback case.
+generates evaluation cases from the selected skill when no test file is supplied.
 
 ```bash
 export OPENAI_API_KEY=...
 export UPSKILL_PROVIDER=openai
 export UPSKILL_MODELS=gpt-4.1-mini
-export UPSKILL_TESTS_PATH=/absolute/path/to/upskill-tests.json
 export UPSKILL_NO_BASELINE=false
 ```
 
-The JSON test file must contain a non-empty `cases` array and every case must
-define a non-empty `expected.contains` value:
+Set `UPSKILL_TESTS_PATH` to use a reviewed JSON test suite instead:
 
 ```json
 {"cases":[{"input":"Review this Python function.","expected":{"contains":"type hint"}}]}
+```
+
+```bash
+export UPSKILL_TESTS_PATH=/absolute/path/to/upskill-tests.json
 ```
 
 Set `UPSKILL_BASE_URL` only for a custom OpenAI-compatible endpoint. Missing,

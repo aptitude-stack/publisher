@@ -1,6 +1,6 @@
 # Aptitude Publisher
 
-![Python](https://img.shields.io/badge/python-3.12-3776AB?style=for-the-badge&logo=python&logoColor=white)
+![Python](https://img.shields.io/badge/python-3.13-3776AB?style=for-the-badge&logo=python&logoColor=white)
 ![uv](https://img.shields.io/badge/uv-managed-6E56CF?style=for-the-badge&logo=uv&logoColor=white)
 ![Rich](https://img.shields.io/badge/rich-CLI-111111?style=for-the-badge)
 ![pytest](https://img.shields.io/badge/pytest-0A9EDC?style=for-the-badge&logo=pytest&logoColor=white)
@@ -280,23 +280,25 @@ fails, the security stage blocks publishing because security has no local
 fallback source. An explicit `PUBLISHER_LLM_GUARD_ENABLED=false` bypass is
 recorded as disabled.
 
-Upskill evaluates publishable skills through official OpenAI by default. It
-requires an OpenAI key and a real test-case file; the publisher does not invent
-generic passing cases.
+Upskill evaluates publishable skills through official OpenAI by default. With
+an OpenAI key, it generates evaluation cases from the selected skill and then
+compares the model with and without that skill.
 
 ```bash
 export OPENAI_API_KEY=...
 export UPSKILL_PROVIDER=openai
 export UPSKILL_MODELS=gpt-4.1-mini
-export UPSKILL_TESTS_PATH=/absolute/path/to/upskill-tests.json
 export UPSKILL_NO_BASELINE=false
 ```
 
-The test file must contain at least one case with a non-empty
-`expected.contains` assertion:
+To run a reviewed, stable suite instead, set `UPSKILL_TESTS_PATH`:
 
 ```json
 {"cases":[{"input":"Review this Python function.","expected":{"contains":"type hint"}}]}
+```
+
+```bash
+export UPSKILL_TESTS_PATH=/absolute/path/to/upskill-tests.json
 ```
 
 Set `UPSKILL_BASE_URL` only for a custom OpenAI-compatible endpoint. Missing,
@@ -350,7 +352,7 @@ publisher/
 
 Requirements:
 
-- Python `>=3.12,<3.13`
+- Python `>=3.13.5,<3.14`
 - `uv`
 
 Developer workflow:

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import os
 import re
@@ -23,6 +22,7 @@ from publisher.integrations.external_tools import (
 _DEFAULT_TIMEOUT_SECONDS = 600
 _DEFAULT_MODEL = "gpt-4.1-mini"
 _DEFAULT_PROVIDER = "openai"
+_EXAMPLE_TESTS_PATH = "/absolute/path/to/upskill-tests.json"
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,19 +82,13 @@ def run_upskill_evaluation(*, skill_root: Path, artifacts_dir: Path) -> UpskillE
             reason="set OPENAI_API_KEY for official OpenAI evaluation",
         )
 
-    direct_result = _run_direct_openai_compatible_eval(
+    command = _build_command(
         skill_root=skill_root,
         artifact_dir=upskill_dir,
         tests_path=tests_path,
-        model=model_name,
         provider=provider,
-        base_url=base_url,
-        api_key=api_key,
+        models=model or [model_name],
     )
-    if direct_result is not None:
-        return direct_result
-
-    command = _build_command(skill_root=skill_root, artifact_dir=upskill_dir)
     if command is None:
         return UpskillEvaluation(
             status="not_available",
@@ -103,10 +97,16 @@ def run_upskill_evaluation(*, skill_root: Path, artifacts_dir: Path) -> UpskillE
         )
 
     try:
+        command_env = os.environ.copy()
+        if base_url and provider == "openai":
+            command_env["OPENAI_API_BASE"] = base_url
+        if api_key and provider == "openai":
+            command_env["OPENAI_API_KEY"] = api_key
         completed = run_command(
             command,
             cwd=skill_root,
             timeout_seconds=int(os.environ.get("PUBLISHER_UPSKILL_TIMEOUT_SECONDS", _DEFAULT_TIMEOUT_SECONDS)),
+            env=command_env,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         return UpskillEvaluation(
@@ -124,6 +124,7 @@ def run_upskill_evaluation(*, skill_root: Path, artifacts_dir: Path) -> UpskillE
 
     status = "scored" if completed.returncode == 0 else "failed"
     reason = None if completed.returncode == 0 else f"upskill exited with status {completed.returncode}"
+    validation_errors = parsed.get("validation_errors", [])
     if status == "scored" and _looks_like_empty_provider_result(parsed):
         status = "failed"
         reason = (
@@ -131,6 +132,11 @@ def run_upskill_evaluation(*, skill_root: Path, artifacts_dir: Path) -> UpskillE
             "or returned no usable responses"
         )
         parsed = {}
+    elif status == "scored":
+        validation_errors = _missing_upskill_metrics_errors(parsed)
+        if validation_errors:
+            status = "failed"
+            reason = "upskill did not produce complete scored performance evidence"
     return UpskillEvaluation(
         status=status,
         score=parsed.get("score"),
@@ -143,7 +149,7 @@ def run_upskill_evaluation(*, skill_root: Path, artifacts_dir: Path) -> UpskillE
         skilled_avg_tokens=parsed.get("skilled_avg_tokens"),
         token_delta=parsed.get("token_delta"),
         models_tested=parsed.get("models_tested", []),
-        validation_errors=parsed.get("validation_errors", []),
+        validation_errors=validation_errors,
         validation_warnings=parsed.get("validation_warnings", []),
         command=command,
         artifact_dir=str(upskill_dir),
@@ -180,105 +186,10 @@ def _reset_artifact_dir(path: Path) -> None:
             child.unlink(missing_ok=True)
 
 
-def _run_direct_openai_compatible_eval(
-    *,
-    skill_root: Path,
-    artifact_dir: Path,
-    tests_path: Path,
-    model: str,
-    provider: str,
-    base_url: str | None,
-    api_key: str | None,
-) -> UpskillEvaluation | None:
-    """Run Upskill through its Python API with explicit provider configuration."""
-    if provider != "openai" or not api_key:
-        return None
-
-    try:
-        from upskill.models import Skill, TestCase
-    except ImportError as exc:
-        return UpskillEvaluation(status="not_available", reason=str(exc))
-
-    try:
-        skill = _load_upskill_skill(skill_root, Skill)
-        test_cases = _load_upskill_test_cases(tests_path, TestCase)
-    except (OSError, ValueError, TypeError) as exc:
-        return UpskillEvaluation(status="failed", reason=str(exc))
-
-    try:
-        result = asyncio.run(
-            _evaluate_direct_skill(
-                skill=skill,
-                test_cases=test_cases,
-                model=model,
-                provider=provider,
-                base_url=base_url,
-                api_key=api_key,
-                run_baseline=True,
-            )
-        )
-    except Exception as exc:  # noqa: BLE001 - external evaluator errors are normalized.
-        return UpskillEvaluation(status="failed", reason=str(exc))
-
-    errors = _direct_result_errors(result)
-    if errors:
-        return UpskillEvaluation(
-            status="failed",
-            artifact_dir=str(artifact_dir),
-            validation_errors=errors,
-            reason="upskill provider did not return complete results",
-        )
-
-    baseline_avg_tokens = _average_tokens(result.baseline_total_tokens, len(test_cases))
-    skilled_avg_tokens = _average_tokens(result.with_skill_total_tokens, len(test_cases))
-    token_delta = (
-        skilled_avg_tokens - baseline_avg_tokens
-        if baseline_avg_tokens is not None and skilled_avg_tokens is not None
-        else None
-    )
-    score = _score_direct_result(
-        skilled_success_rate=result.with_skill_success_rate,
-        skill_lift=result.skill_lift,
-        token_delta=token_delta,
-        baseline_avg_tokens=baseline_avg_tokens,
-    )
-    if _direct_result_looks_empty_provider_failure(
-        test_case_count=len(test_cases),
-        baseline_avg_tokens=baseline_avg_tokens,
-        skilled_avg_tokens=skilled_avg_tokens,
-        baseline_success_rate=result.baseline_success_rate,
-        skilled_success_rate=result.with_skill_success_rate,
-    ):
-        return UpskillEvaluation(
-            status="failed",
-            artifact_dir=str(artifact_dir),
-            reason=(
-                "upskill produced zero-token failing results; provider calls likely failed "
-                "or returned no usable responses"
-            ),
-        )
-
-    return UpskillEvaluation(
-        status="scored",
-        score=score,
-        passed=result.is_beneficial,
-        test_case_count=len(test_cases),
-        baseline_success_rate=result.baseline_success_rate,
-        skilled_success_rate=result.with_skill_success_rate,
-        skill_lift=result.skill_lift,
-        baseline_avg_tokens=baseline_avg_tokens,
-        skilled_avg_tokens=skilled_avg_tokens,
-        token_delta=token_delta,
-        models_tested=[result.model],
-        command=["upskill-python-api", str(skill_root)],
-        artifact_dir=str(artifact_dir),
-    )
-
-
 def _validated_tests_path() -> tuple[Path | None, str | None]:
     value = os.environ.get("UPSKILL_TESTS_PATH")
-    if not value:
-        return None, "set UPSKILL_TESTS_PATH to JSON cases with expected.contains assertions"
+    if not value or value == _EXAMPLE_TESTS_PATH:
+        return None, None
 
     path = Path(value)
     try:
@@ -289,11 +200,6 @@ def _validated_tests_path() -> tuple[Path | None, str | None]:
     cases = payload.get("cases") if isinstance(payload, dict) else payload
     if not isinstance(cases, list) or not cases:
         return None, "UPSKILL_TESTS_PATH must contain a non-empty cases list"
-    for index, case in enumerate(cases, start=1):
-        expected = case.get("expected") if isinstance(case, dict) else None
-        contains = expected.get("contains") if isinstance(expected, dict) else None
-        if not isinstance(contains, str) or not contains.strip():
-            return None, f"UPSKILL_TESTS_PATH case {index} must define non-empty expected.contains"
     return path, None
 
 
@@ -303,314 +209,14 @@ def _upskill_api_key(*, base_url: str | None) -> str | None:
     return os.environ.get("OPENAI_API_KEY")
 
 
-def _direct_result_errors(result: Any) -> list[str]:
-    """Return visible evidence failures instead of silently scoring partial runs."""
-    errors: list[str] = []
-    for label in ("baseline", "with_skill"):
-        items = getattr(result, f"{label}_results", [])
-        if not items:
-            errors.append(f"{label} evaluation returned no test results")
-            continue
-        for index, item in enumerate(items, start=1):
-            error = getattr(item, "error", None)
-            output = getattr(item, "output", None)
-            tokens = getattr(item, "tokens_used", None)
-            if error:
-                errors.append(str(error))
-            elif not isinstance(output, str) or not output.strip():
-                errors.append(f"{label} case {index} returned an empty response")
-            elif not isinstance(tokens, int) or tokens <= 0:
-                errors.append(f"{label} case {index} did not report token usage")
-    return errors
-
-
-def _direct_result_looks_empty_provider_failure(
+def _build_command(
     *,
-    test_case_count: int,
-    baseline_avg_tokens: int | None,
-    skilled_avg_tokens: int | None,
-    baseline_success_rate: float,
-    skilled_success_rate: float,
-) -> bool:
-    if test_case_count <= 0:
-        return False
-    return (
-        baseline_avg_tokens == 0
-        and skilled_avg_tokens == 0
-        and baseline_success_rate == 0.0
-        and skilled_success_rate == 0.0
-    )
-
-
-async def _evaluate_direct_skill(
-    *,
-    skill: Any,
-    test_cases: list[Any],
-    model: str | None,
+    skill_root: Path,
+    artifact_dir: Path,
+    tests_path: Path | None,
     provider: str,
-    base_url: str | None,
-    api_key: str | None,
-    run_baseline: bool,
-) -> Any:
-    """Run the direct evaluator while explicitly closing async provider clients."""
-    from upskill.config import Config
-    from upskill.models import EvalResults
-
-    config = Config.load()
-    model_name = model or config.effective_eval_model
-    results = EvalResults(skill_name=skill.name, model=model_name)
-
-    for test_case in test_cases:
-        results.with_skill_results.append(
-            await _run_direct_test(
-                test_case=test_case,
-                skill=skill,
-                model=model_name,
-                provider=provider,
-                base_url=base_url,
-                api_key=api_key,
-            )
-        )
-    _populate_direct_metrics(results, test_cases, prefix="with_skill")
-
-    if run_baseline:
-        for test_case in test_cases:
-            results.baseline_results.append(
-                await _run_direct_test(
-                    test_case=test_case,
-                    skill=None,
-                    model=model_name,
-                    provider=provider,
-                    base_url=base_url,
-                    api_key=api_key,
-                )
-            )
-        _populate_direct_metrics(results, test_cases, prefix="baseline")
-
-    return results
-
-
-async def _run_direct_test(
-    *,
-    test_case: Any,
-    skill: Any | None,
-    model: str,
-    provider: str,
-    base_url: str | None,
-    api_key: str | None,
-) -> Any:
-    from upskill.models import TestResult
-
-    system = "You are a helpful AI assistant."
-    if skill:
-        system += f"\n\n## Skill: {skill.name}\n\n{skill.body}"
-
-    user_content = test_case.input
-    if test_case.context and "files" in test_case.context:
-        for filename, content in test_case.context["files"].items():
-            user_content += f"\n\n```{filename}\n{content}\n```"
-
-    try:
-        if provider == "openai":
-            output, tokens_used = await _run_openai_chat(
-                model=model,
-                system=system,
-                user_content=user_content,
-                base_url=base_url,
-                api_key=api_key,
-            )
-        else:
-            output, tokens_used = await _run_anthropic_chat(
-                model=model,
-                system=system,
-                user_content=user_content,
-                base_url=base_url,
-                api_key=api_key,
-            )
-        return TestResult(
-            test_case=test_case,
-            success=_check_expected(output, test_case.expected),
-            output=output,
-            tokens_used=tokens_used,
-            turns=1,
-        )
-    except Exception as exc:  # noqa: BLE001 - provider errors become test failures.
-        return TestResult(test_case=test_case, success=False, error=str(exc))
-
-
-async def _run_openai_chat(
-    *,
-    model: str,
-    system: str,
-    user_content: str,
-    base_url: str | None,
-    api_key: str | None,
-) -> tuple[str, int]:
-    from openai import AsyncOpenAI
-
-    if base_url and not api_key:
-        api_key = "sk-no-key-required"
-
-    async with AsyncOpenAI(base_url=base_url, api_key=api_key) as client:
-        response = await client.chat.completions.create(
-            model=model,
-            max_tokens=2048,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": user_content},
-            ],
-        )
-    output = response.choices[0].message.content or ""
-    tokens_used = (
-        response.usage.prompt_tokens + response.usage.completion_tokens
-        if response.usage
-        else 0
-    )
-    return output, tokens_used
-
-
-async def _run_anthropic_chat(
-    *,
-    model: str,
-    system: str,
-    user_content: str,
-    base_url: str | None,
-    api_key: str | None,
-) -> tuple[str, int]:
-    from anthropic import AsyncAnthropic
-
-    kwargs = {}
-    if base_url:
-        kwargs["base_url"] = base_url
-    if api_key:
-        kwargs["api_key"] = api_key
-
-    async with AsyncAnthropic(**kwargs) as client:
-        response = await client.messages.create(
-            model=model,
-            max_tokens=4096,
-            system=system,
-            messages=[{"role": "user", "content": user_content}],
-        )
-    output = _extract_anthropic_text(response.content)
-    tokens_used = response.usage.input_tokens + response.usage.output_tokens
-    return output, tokens_used
-
-
-def _extract_anthropic_text(content: list[Any]) -> str:
-    texts: list[str] = []
-    for block in content:
-        if hasattr(block, "text"):
-            texts.append(block.text)
-        elif hasattr(block, "thinking"):
-            texts.append(block.thinking)
-        elif isinstance(block, dict):
-            if block.get("type") == "text":
-                texts.append(str(block.get("text", "")))
-            elif block.get("type") == "thinking":
-                texts.append(str(block.get("thinking", "")))
-    return "\n".join(texts)
-
-
-def _check_expected(output: str, expected: dict[str, Any] | None) -> bool:
-    if not expected:
-        return True
-    contains = expected.get("contains")
-    if contains is not None:
-        return str(contains).lower() in output.lower()
-    return True
-
-
-def _populate_direct_metrics(results: Any, test_cases: list[Any], *, prefix: str) -> None:
-    result_items = getattr(results, f"{prefix}_results")
-    successes = sum(1 for result in result_items if result.success)
-    setattr(
-        results,
-        f"{prefix}_success_rate",
-        successes / len(test_cases) if test_cases else 0,
-    )
-    setattr(
-        results,
-        f"{prefix}_total_tokens",
-        sum(result.tokens_used for result in result_items),
-    )
-    setattr(
-        results,
-        f"{prefix}_avg_turns",
-        sum(result.turns for result in result_items) / len(test_cases) if test_cases else 0,
-    )
-
-
-def _load_upskill_skill(skill_root: Path, skill_type: Any) -> Any:
-    """Load either publisher-style frontmatter or current Upskill markdown."""
-    skill_file = skill_root / "SKILL.md"
-    content = skill_file.read_text(encoding="utf-8")
-    if content.startswith("---\n"):
-        closing_index = content.find("\n---\n", 4)
-        if closing_index == -1:
-            raise ValueError("SKILL.md frontmatter must end with a closing --- delimiter.")
-        frontmatter = _parse_simple_yaml(content[4:closing_index])
-        body = content[closing_index + 5 :]
-        name = str(frontmatter.get("name") or skill_root.name)
-        description = str(frontmatter.get("description") or name)
-        return skill_type(name=name, description=description, body=body)
-
-    lines = content.splitlines()
-    name = lines[0].lstrip("# ").strip() if lines else skill_root.name
-    description = lines[2].strip() if len(lines) > 2 else name
-    body = "\n".join(lines[4:]) if len(lines) > 4 else content
-    return skill_type(name=name, description=description, body=body)
-
-
-def _parse_simple_yaml(frontmatter_text: str) -> dict[str, Any]:
-    """Parse the shallow YAML frontmatter fields needed by Upskill."""
-    result: dict[str, Any] = {}
-    for raw_line in frontmatter_text.splitlines():
-        if not raw_line.strip() or raw_line.lstrip().startswith("#"):
-            continue
-        if raw_line.startswith(" ") or ":" not in raw_line:
-            continue
-        key, value = raw_line.split(":", 1)
-        result[key.strip()] = value.strip().strip("'\"")
-    return result
-
-
-def _load_upskill_test_cases(tests_path: Path, test_case_type: Any) -> list[Any]:
-    """Load Upskill test cases from JSON."""
-    payload = json.loads(tests_path.read_text(encoding="utf-8"))
-    cases = payload.get("cases") if isinstance(payload, dict) else payload
-    if not isinstance(cases, list):
-        raise ValueError("UPSKILL_TESTS_PATH must point to a JSON list or an object with cases.")
-    return [test_case_type(**case) for case in cases]
-
-
-def _average_tokens(total_tokens: int, test_count: int) -> int | None:
-    """Return integer average tokens per test case."""
-    if test_count <= 0:
-        return None
-    return round(total_tokens / test_count)
-
-
-def _score_direct_result(
-    *,
-    skilled_success_rate: float,
-    skill_lift: float,
-    token_delta: int | None,
-    baseline_avg_tokens: int | None,
-) -> float:
-    """Score direct Upskill results with the same rubric used for parsed CLI tables."""
-    token_score = 0.0
-    if token_delta is not None and token_delta < 0:
-        token_score = min(1.0, abs(token_delta) / max(baseline_avg_tokens or 1, 1))
-    return round(
-        (skilled_success_rate * 0.70)
-        + (max(0.0, skill_lift) * 0.20)
-        + (token_score * 0.10),
-        2,
-    )
-
-
-def _build_command(*, skill_root: Path, artifact_dir: Path) -> list[str] | None:
+    models: list[str],
+) -> list[str] | None:
     values = {
         "skill_path": str(skill_root),
         "artifact_dir": str(artifact_dir),
@@ -628,21 +234,35 @@ def _build_command(*, skill_root: Path, artifact_dir: Path) -> list[str] | None:
         executable,
         "eval",
         str(skill_root),
+        "--runs-dir",
+        str(artifact_dir),
     ]
-    tests_path = os.environ.get("UPSKILL_TESTS_PATH")
     if tests_path:
-        command.extend(["--tests", tests_path])
-    provider = os.environ.get("UPSKILL_PROVIDER")
-    if provider:
-        command.extend(["--provider", provider])
-    base_url = os.environ.get("UPSKILL_BASE_URL")
-    if base_url:
-        command.extend(["--base-url", base_url])
-    for model in _split_models(os.environ.get("UPSKILL_MODELS")):
-        command.extend(["-m", model])
+        command.extend(["--tests", str(tests_path)])
+    else:
+        command.extend(["--test-gen-model", _upskill_model_reference(provider, models[0])])
+    for model in models:
+        command.extend(["--model", _upskill_model_reference(provider, model)])
     if configured_bool("UPSKILL_NO_BASELINE", default=False):
         command.append("--no-baseline")
     return command
+
+
+def _upskill_model_reference(provider: str, model: str) -> str:
+    """Use upstream Upskill's provider-qualified model format."""
+    return model if model.startswith(f"{provider}.") else f"{provider}.{model}"
+
+
+def _missing_upskill_metrics_errors(parsed: dict[str, Any]) -> list[str]:
+    """Reject incomplete upstream run summaries before they reach publish gates."""
+    errors: list[str] = []
+    if not isinstance(parsed.get("test_case_count"), int) or parsed["test_case_count"] <= 0:
+        errors.append("upskill did not record evaluated test cases")
+    for label in ("baseline", "skilled"):
+        tokens = parsed.get(f"{label}_avg_tokens")
+        if not isinstance(tokens, int) or tokens <= 0:
+            errors.append(f"{label} evaluation did not report token usage")
+    return errors
 
 
 def _split_models(value: str | None) -> list[str]:
@@ -758,6 +378,10 @@ def _metrics_from_payload(payload: Any) -> dict[str, Any]:
     if not isinstance(payload, dict):
         return {}
 
+    upstream_metrics = _metrics_from_upstream_run_summary(payload)
+    if upstream_metrics:
+        return upstream_metrics
+
     metrics = {
         "score": _coerce_float(
             _first_present(
@@ -817,6 +441,79 @@ def _metrics_from_payload(payload: Any) -> dict[str, Any]:
         _merge_metrics(nested_metrics, _metrics_from_payload(payload.get(key)))
     _merge_metrics(nested_metrics, metrics)
     return nested_metrics
+
+
+def _metrics_from_upstream_run_summary(payload: dict[str, Any]) -> dict[str, Any]:
+    """Normalize the batch summary written by the upstream Upskill CLI."""
+    results = payload.get("results")
+    if not isinstance(results, list):
+        return {}
+
+    by_type = {
+        str(result.get("run_type")): result
+        for result in results
+        if isinstance(result, dict) and result.get("run_type") in {"baseline", "with_skill"}
+    }
+    baseline = by_type.get("baseline")
+    skilled = by_type.get("with_skill")
+    if baseline is None or skilled is None:
+        return {}
+
+    def success_rate(result: dict[str, Any]) -> float | None:
+        total = _coerce_int(result.get("assertions_total"))
+        passed = _coerce_int(result.get("assertions_passed"))
+        if total is None or passed is None or total <= 0:
+            return None
+        return passed / total
+
+    def avg_tokens(result: dict[str, Any]) -> int | None:
+        total = _coerce_int(
+            result.get("stats", {}).get("total_tokens") if isinstance(result.get("stats"), dict) else None
+        )
+        test_count = _coerce_int(result.get("assertions_total"))
+        if total is None or test_count is None or test_count <= 0:
+            return None
+        return round(total / test_count)
+
+    baseline_success = success_rate(baseline)
+    skilled_success = success_rate(skilled)
+    baseline_tokens = avg_tokens(baseline)
+    skilled_tokens = avg_tokens(skilled)
+    metrics: dict[str, Any] = {
+        "test_case_count": _coerce_int(skilled.get("assertions_total")),
+        "baseline_success_rate": baseline_success,
+        "skilled_success_rate": skilled_success,
+        "baseline_avg_tokens": baseline_tokens,
+        "skilled_avg_tokens": skilled_tokens,
+        "models_tested": _coerce_string_list(payload.get("model")),
+        "validation_errors": [
+            str(result["error_message"])
+            for result in (baseline, skilled)
+            if result.get("error_message")
+        ],
+        "validation_warnings": [],
+    }
+    if baseline_success is not None and skilled_success is not None:
+        metrics["skill_lift"] = round(skilled_success - baseline_success, 4)
+    if baseline_tokens is not None and skilled_tokens is not None:
+        metrics["token_delta"] = skilled_tokens - baseline_tokens
+    metrics["passed"] = _coerce_bool(skilled.get("passed"))
+    metrics["score"] = _score_from_metrics(metrics)
+    return metrics
+
+
+def _score_from_metrics(metrics: dict[str, Any]) -> float | None:
+    """Apply the publisher's existing performance rubric to upstream evidence."""
+    skilled_success = metrics.get("skilled_success_rate")
+    skill_lift = metrics.get("skill_lift")
+    token_delta = metrics.get("token_delta")
+    baseline_tokens = metrics.get("baseline_avg_tokens")
+    if not isinstance(skilled_success, float) or not isinstance(skill_lift, float):
+        return None
+    token_score = 0.0
+    if isinstance(token_delta, int) and token_delta < 0:
+        token_score = min(1.0, abs(token_delta) / max(baseline_tokens or 1, 1))
+    return round((skilled_success * 0.70) + (max(0.0, skill_lift) * 0.20) + (token_score * 0.10), 2)
 
 
 def _first_present(payload: dict[str, Any], *keys: str) -> Any:
