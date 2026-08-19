@@ -185,7 +185,7 @@ def run_menu() -> int:
 def _flow_options() -> list[tuple[str, Action]]:
     options: list[tuple[str, Action]] = [
         ("Publish to registry", "publish"),
-        ("Full inspect", "inspect"),
+        ("Inspect", "inspect"),
     ]
     if _default_admin_token():
         options.append(("Admin batch upload", "batch_upload"))
@@ -308,21 +308,24 @@ def _build_publish_plan(action: Action) -> PublishPlan:
 
     default_intent = _normalize_intent(skill.intent if skill is not None else None)
 
-    _print_step_separator()
-    intent = _select(
-        "Publish intent",
-        [
-            ("Create new skill", "create_skill"),
-            ("Publish new version", "publish_version"),
-        ],
-        default=default_intent,
-        descriptions={
-            "create_skill": "Use this when the registry does not have the skill yet.",
-            "publish_version": "Use this when the slug already exists and this is a new version.",
-        },
-        allow_back=True,
-    )
-    _print_step_separator()
+    if action == "publish":
+        _print_step_separator()
+        intent = _select(
+            "Publish intent",
+            [
+                ("Create new skill", "create_skill"),
+                ("Publish new version", "publish_version"),
+            ],
+            default=default_intent,
+            descriptions={
+                "create_skill": "Use this when the registry does not have the skill yet.",
+                "publish_version": "Use this when the slug already exists and this is a new version.",
+            },
+            allow_back=True,
+        )
+        _print_step_separator()
+    else:
+        intent = default_intent
     scan_profile = _select(
         "Inspection depth",
         [
@@ -589,9 +592,10 @@ def _render_plan(plan: PublishPlan) -> None:
     table.add_column(style=THEME.text_body)
     table.add_row("Action", _action_label(plan.action))
     table.add_row("CLI version", _publisher_cli_version())
-    table.add_row("Skill", str(plan.skill_path))
+    table.add_row("Skill", plan.skill_path.name)
     table.add_row("Skill version", "resolved during inspection")
-    table.add_row("Intent", plan.intent)
+    if plan.action == "publish":
+        table.add_row("Intent", plan.intent)
     table.add_row("Inspection depth", _scan_profile_label(plan.scan_profile))
     table.add_row("Trust", plan.trust_tier)
     table.add_row("Namespace", plan.namespace)
@@ -1044,7 +1048,7 @@ def _normalize_intent(value: str | None) -> Intent:
 
 def _action_label(action: Action) -> str:
     labels = {
-        "inspect": "Full inspect",
+        "inspect": "Inspect",
         "publish": "Publish to registry",
         "help": "Help",
         "exit": "Exit",

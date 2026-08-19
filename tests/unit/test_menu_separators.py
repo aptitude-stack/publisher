@@ -43,6 +43,32 @@ def test_interactive_pipeline_report_shows_only_three_evaluation_phases(monkeypa
     assert "Skill Identity" not in rendered
 
 
+def test_render_plan_shows_skill_folder_name_only(monkeypatch, tmp_path: Path) -> None:
+    output = StringIO()
+    monkeypatch.setattr(menu, "CONSOLE", Console(file=output, width=120))
+    skill_path = tmp_path / "python-patterns"
+    plan = menu.PublishPlan(
+        action="inspect",
+        skill_path=skill_path,
+        slug=None,
+        intent="create_skill",
+        trust_tier="untrusted",
+        namespace="public",
+        artifact_origin="internal",
+        policy_pack_slug=None,
+        publisher_identity=None,
+        scan_profile="fast",
+    )
+
+    menu._render_plan(plan)
+
+    rendered = output.getvalue()
+    assert "python-patterns" in rendered
+    assert str(skill_path) not in rendered
+    assert "Inspect" in rendered
+    assert "Intent" not in rendered
+
+
 def test_wizard_pipeline_enables_verbose_upskill(monkeypatch, tmp_path: Path) -> None:
     captured: dict[str, object] = {}
 
@@ -117,6 +143,29 @@ def test_build_publish_plan_prints_separators_between_decisions(
         "separator",
         "select:Inspection depth",
     ]
+
+
+def test_build_inspect_plan_skips_publish_intent(monkeypatch, tmp_path: Path) -> None:
+    skill = menu.MenuSkill(
+        path=tmp_path,
+        name="example",
+        version="0.1.0",
+        intent="create_skill",
+    )
+    selections: list[str] = []
+
+    def fake_select(title, options, **kwargs):
+        selections.append(title)
+        return options[0][1]
+
+    monkeypatch.setattr(menu, "_discover_skills", lambda root: [skill])
+    monkeypatch.setattr(menu, "_print_step_separator", lambda: None)
+    monkeypatch.setattr(menu, "_select", fake_select)
+
+    plan = menu._build_publish_plan("inspect")
+
+    assert plan.intent == "create_skill"
+    assert "Publish intent" not in selections
 
 
 def test_flow_options_hide_batch_upload_without_admin_token(monkeypatch) -> None:
