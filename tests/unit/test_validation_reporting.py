@@ -96,3 +96,21 @@ def test_quality_results_exclude_derived_scores_and_final_scores_stay_separate()
         "Maturity score": "4.0 / 10.0",
         "Publish decision": "review_required",
     }
+
+
+def test_quality_labels_upskill_verdict_as_summary_and_keeps_actionable_suggestions() -> None:
+    context = PublishContext(source=SkillSource(file_path="skills/example"))
+    context.performance_exam.score = 0.0
+    context.metadata.extra["upskill_evaluation"] = {
+        "status": "scored",
+        "recommendations": [
+            "skill may not be beneficial",
+            "add a troubleshooting example",
+        ],
+    }
+
+    quality = dict(dict(_report_detail_sections(context))["Quality Evaluation"])
+
+    assert quality["Summary"] == "skill may not be beneficial"
+    assert quality["Suggestion 1"] == "add a troubleshooting example"
+    assert "Suggestion 2" not in quality

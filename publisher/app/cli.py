@@ -837,11 +837,21 @@ def _report_detail_sections(context) -> list[tuple[str, list[tuple[str, str]]]]:
             (f"Detail {index}", str(error))
             for index, error in enumerate(quality_status.get("validation_errors", []), start=1)
         )
+        verdict = None
+        suggestions = []
+        for recommendation in quality_status.get("recommendations", []):
+            recommendation = str(recommendation)
+            if recommendation.strip().casefold() in {"keep skill", "skill may not be beneficial"}:
+                verdict = verdict or recommendation
+            else:
+                suggestions.append(recommendation)
+        if verdict:
+            quality_rows.append(("Summary", verdict))
         quality_rows.extend(
-            (f"Suggestion {index}", str(recommendation))
-            for index, recommendation in enumerate(quality_status.get("recommendations", []), start=1)
+            (f"Suggestion {index}", suggestion)
+            for index, suggestion in enumerate(suggestions, start=1)
         )
-    if quality_grade == "failed":
+    if quality_grade == "failed" and not any(label == "Summary" for label, _ in quality_rows):
         quality_rows.append(("Summary", quality_reason))
 
     final_score_rows = [
