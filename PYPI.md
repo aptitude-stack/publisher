@@ -54,6 +54,20 @@ export APTITUDE_READ_TOKEN=reader-token
 
 ---
 
+## Performance Evaluation
+
+Automatic Upskill case generation and evaluation currently use one OpenAI model:
+`gpt-4.1-mini`. Set `OPENAI_API_KEY` before inspection; do not configure
+multiple `UPSKILL_MODELS` values for publisher evaluation.
+
+```bash
+export OPENAI_API_KEY=...
+export UPSKILL_PROVIDER=openai
+export UPSKILL_MODELS=gpt-4.1-mini
+```
+
+---
+
 ## MCP Server
 
 Run the local stdio MCP server directly from PyPI:

@@ -579,7 +579,7 @@ def _run_pipeline(plan: PublishPlan) -> PublishContext:
         policy_pack_slug=plan.policy_pack_slug,
         publisher_identity=plan.publisher_identity,
     )
-    with _scan_profile_environment(plan.scan_profile):
+    with _scan_profile_environment(plan.scan_profile, upskill_verbose=True):
         return pipeline.run(context)
 
 

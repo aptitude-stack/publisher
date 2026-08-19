@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 from io import StringIO
 from pathlib import Path
 
@@ -40,6 +41,42 @@ def test_interactive_pipeline_report_shows_only_three_evaluation_phases(monkeypa
     assert "Stages" not in rendered
     assert "Gate Results" not in rendered
     assert "Skill Identity" not in rendered
+
+
+def test_wizard_pipeline_enables_verbose_upskill(monkeypatch, tmp_path: Path) -> None:
+    captured: dict[str, object] = {}
+
+    @contextmanager
+    def fake_scan_environment(profile, *, upskill_verbose):
+        captured["profile"] = profile
+        captured["upskill_verbose"] = upskill_verbose
+        yield
+
+    class FakePipeline:
+        def create_context(self, **kwargs):
+            return object()
+
+        def run(self, context):
+            return context
+
+    monkeypatch.setattr(menu, "_scan_profile_environment", fake_scan_environment)
+    monkeypatch.setattr(menu, "PublisherPipeline", FakePipeline)
+    plan = menu.PublishPlan(
+        action="inspect",
+        skill_path=tmp_path,
+        slug=None,
+        intent="create_skill",
+        trust_tier="untrusted",
+        namespace="public",
+        artifact_origin="internal",
+        policy_pack_slug=None,
+        publisher_identity=None,
+        scan_profile="fast",
+    )
+
+    menu._run_pipeline(plan)
+
+    assert captured == {"profile": "fast", "upskill_verbose": True}
 
 
 def test_build_publish_plan_prints_separators_between_decisions(

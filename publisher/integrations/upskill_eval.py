@@ -243,6 +243,8 @@ def _build_command(
         command.extend(["--test-gen-model", _upskill_model_reference(provider, models[0])])
     for model in models:
         command.extend(["--model", _upskill_model_reference(provider, model)])
+    if configured_bool("PUBLISHER_UPSKILL_VERBOSE", default=False):
+        command.append("--verbose")
     if configured_bool("UPSKILL_NO_BASELINE", default=False):
         command.append("--no-baseline")
     return command

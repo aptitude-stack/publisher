@@ -639,7 +639,7 @@ def _batch_status_style(status: str) -> str:
 
 
 @contextmanager
-def _scan_profile_environment(profile: ScanProfile):
+def _scan_profile_environment(profile: ScanProfile, *, upskill_verbose: bool = False):
     """Apply temporary LLM Guard/Upskill settings for the selected inspection depth."""
     if profile == "fast":
         overrides = {
@@ -655,6 +655,9 @@ def _scan_profile_environment(profile: ScanProfile):
             "UPSKILL_USE_DEFAULT_TESTS": "false",
             "PUBLISHER_UPSKILL_TIMEOUT_SECONDS": "600",
         }
+
+    if upskill_verbose:
+        overrides["PUBLISHER_UPSKILL_VERBOSE"] = "true"
 
     previous = {key: os.environ.get(key) for key in overrides}
     try:

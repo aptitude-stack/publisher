@@ -291,6 +291,7 @@ def test_upskill_generates_openai_cases_when_no_file_is_configured(tmp_path, mon
     monkeypatch.delenv("UPSKILL_BASE_URL", raising=False)
     monkeypatch.delenv("UPSKILL_MODELS", raising=False)
     monkeypatch.delenv("PUBLISHER_UPSKILL_COMMAND", raising=False)
+    monkeypatch.setenv("PUBLISHER_UPSKILL_VERBOSE", "true")
 
     captured: dict[str, object] = {}
 
@@ -310,6 +311,7 @@ def test_upskill_generates_openai_cases_when_no_file_is_configured(tmp_path, mon
     assert "--test-gen-model" in command
     assert command[command.index("--test-gen-model") + 1] == "openai.gpt-4.1-mini"
     assert command[command.index("--model") + 1] == "openai.gpt-4.1-mini"
+    assert "--verbose" in command
     assert result.test_case_count == 2
     assert result.baseline_success_rate == 0.5
     assert result.skilled_success_rate == 1.0
