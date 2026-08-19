@@ -82,22 +82,32 @@ the primary `SKILL.md`, metadata fields, schemas, companion markdown, scripts,
 references, and other text files. It checks for prompt injection, secrets, and
 hidden text before the skill can be published.
 
-Upskill can run directly when installed:
+Upskill evaluates publishable skills through official OpenAI by default. It
+requires explicit test cases and does not generate a generic fallback case.
 
 ```bash
-export UPSKILL_MODELS="haiku,sonnet"
+export OPENAI_API_KEY=...
+export UPSKILL_PROVIDER=openai
+export UPSKILL_MODELS=gpt-4o-mini
+export UPSKILL_TESTS_PATH=/absolute/path/to/upskill-tests.json
+export UPSKILL_NO_BASELINE=false
 ```
 
-or through an explicit command template:
+The JSON test file must contain a non-empty `cases` array and every case must
+define a non-empty `expected.contains` value:
 
-```bash
-export PUBLISHER_UPSKILL_COMMAND='upskill eval {skill_path}'
+```json
+{"cases":[{"input":"Review this Python function.","expected":{"contains":"type hint"}}]}
 ```
 
-The Upskill command template supports `{skill_path}`, `{skill_file}`,
-`{artifact_dir}`, and `{runs_dir}` when the selected command supports it. If Upskill is
-disabled, unavailable, or failing, the performance exam records that evaluator
-status and produces no score because performance has no local fallback source.
-If LLM Guard is disabled, unavailable, or failing, the security stage records
-that evaluator status. Unavailable or failing LLM Guard blocks the publish flow
-because security has no local fallback source.
+Set `UPSKILL_BASE_URL` only for a custom OpenAI-compatible endpoint. Missing,
+partial, empty, or failed Upskill evidence blocks publishing and records the
+reason in evaluator artifacts. A scored result that shows no benefit remains
+quality evidence, not an evaluator failure. For a live smoke check, run an
+inspect with the configuration above and verify `status: scored`,
+`gpt-4o-mini`, nonzero token metrics, and no validation errors. Evaluation
+sends skill/test content to OpenAI; see [OpenAI API data controls](https://developers.openai.com/api/docs/guides/your-data#default-usage-policies-by-endpoint).
+If LLM Guard is unavailable or failing, the security stage records that
+evaluator status and blocks the publish flow because security has no local
+fallback source. An explicit `PUBLISHER_LLM_GUARD_ENABLED=false` bypass is
+recorded as disabled.

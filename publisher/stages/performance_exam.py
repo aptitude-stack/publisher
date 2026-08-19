@@ -37,7 +37,7 @@ class PerformanceExamStage(PublisherStage):
                 "artifact_path": artifact_path,
             },
             messages=[
-                "Performance exam consumed Hugging Face Upskill as the sole performance source.",
+                "Performance exam consumed Upskill as the sole performance source.",
                 "Metadata maturity_score was generated from validation quality and Upskill score.",
                 "No local performance estimate is produced when Upskill is unavailable or unscored.",
             ],
@@ -57,8 +57,8 @@ class PerformanceExamStage(PublisherStage):
         exam.token_delta = None
         exam.efficiency_label = None
         exam.notes = [
-            "Performance exam depends only on Hugging Face upskill evidence.",
-            "Set PUBLISHER_UPSKILL_COMMAND or install upskill to enable external skill evaluation.",
+            "Performance exam depends only on scored Upskill evidence.",
+            "Set OPENAI_API_KEY and UPSKILL_TESTS_PATH to enable publishable external evaluation.",
         ]
 
     def _run_upskill_exam(self, context: PublishContext) -> None:
@@ -106,7 +106,7 @@ class PerformanceExamStage(PublisherStage):
         if result.token_delta is not None:
             exam.efficiency_label = "improved" if result.token_delta < 0 else "neutral"
         self._apply_upskill_token_estimate(context)
-        exam.notes.append("Performance metrics came from Hugging Face Upskill.")
+        exam.notes.append("Performance metrics came from Upskill.")
 
     def _apply_upskill_token_estimate(self, context: PublishContext) -> None:
         """Use Upskill's measured with-skill token average as metadata token estimate."""

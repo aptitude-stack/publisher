@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import re
-import subprocess
-import asyncio
 import shutil
+import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -21,6 +21,8 @@ from publisher.integrations.external_tools import (
 
 
 _DEFAULT_TIMEOUT_SECONDS = 600
+_DEFAULT_MODEL = "gpt-4o-mini"
+_DEFAULT_PROVIDER = "openai"
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,7 +56,41 @@ def run_upskill_evaluation(*, skill_root: Path, artifacts_dir: Path) -> UpskillE
     _reset_artifact_dir(upskill_dir)
     upskill_dir.mkdir(parents=True, exist_ok=True)
 
-    direct_result = _run_direct_openai_compatible_eval(skill_root=skill_root, artifact_dir=upskill_dir)
+    tests_path, tests_error = _validated_tests_path()
+    if tests_error:
+        return UpskillEvaluation(
+            status="failed",
+            artifact_dir=str(upskill_dir),
+            reason=tests_error,
+        )
+    if configured_bool("UPSKILL_NO_BASELINE", default=False):
+        return UpskillEvaluation(
+            status="failed",
+            artifact_dir=str(upskill_dir),
+            reason="UPSKILL_NO_BASELINE must be false for publishable performance evidence",
+        )
+
+    provider = os.environ.get("UPSKILL_PROVIDER", _DEFAULT_PROVIDER)
+    base_url = os.environ.get("UPSKILL_BASE_URL")
+    api_key = _upskill_api_key(base_url=base_url)
+    model = _split_models(os.environ.get("UPSKILL_MODELS"))
+    model_name = model[0] if model else _DEFAULT_MODEL
+    if provider == "openai" and not api_key:
+        return UpskillEvaluation(
+            status="failed",
+            artifact_dir=str(upskill_dir),
+            reason="set OPENAI_API_KEY for official OpenAI evaluation",
+        )
+
+    direct_result = _run_direct_openai_compatible_eval(
+        skill_root=skill_root,
+        artifact_dir=upskill_dir,
+        tests_path=tests_path,
+        model=model_name,
+        provider=provider,
+        base_url=base_url,
+        api_key=api_key,
+    )
     if direct_result is not None:
         return direct_result
 
@@ -144,18 +180,18 @@ def _reset_artifact_dir(path: Path) -> None:
             child.unlink(missing_ok=True)
 
 
-def _run_direct_openai_compatible_eval(*, skill_root: Path, artifact_dir: Path) -> UpskillEvaluation | None:
-    """Run Upskill through its Python API when a custom OpenAI-compatible key is needed."""
-    base_url = os.environ.get("UPSKILL_BASE_URL")
-    api_key = (
-        os.environ.get("UPSKILL_API_KEY")
-        or os.environ.get("GROQ_API_KEY")
-        or os.environ.get("OPENAI_API_KEY")
-    )
-    tests_path = os.environ.get("UPSKILL_TESTS_PATH")
-    if not base_url or not api_key:
-        return None
-    if not tests_path and not configured_bool("UPSKILL_USE_DEFAULT_TESTS", default=True):
+def _run_direct_openai_compatible_eval(
+    *,
+    skill_root: Path,
+    artifact_dir: Path,
+    tests_path: Path,
+    model: str,
+    provider: str,
+    base_url: str | None,
+    api_key: str | None,
+) -> UpskillEvaluation | None:
+    """Run Upskill through its Python API with explicit provider configuration."""
+    if provider != "openai" or not api_key:
         return None
 
     try:
@@ -165,33 +201,33 @@ def _run_direct_openai_compatible_eval(*, skill_root: Path, artifact_dir: Path) 
 
     try:
         skill = _load_upskill_skill(skill_root, Skill)
-        test_cases = (
-            _load_upskill_test_cases(Path(tests_path), TestCase)
-            if tests_path
-            else _default_upskill_test_cases(skill_root=skill_root, test_case_type=TestCase)
-        )
+        test_cases = _load_upskill_test_cases(tests_path, TestCase)
     except (OSError, ValueError, TypeError) as exc:
         return UpskillEvaluation(status="failed", reason=str(exc))
-
-    model = _split_models(os.environ.get("UPSKILL_MODELS"))
-    model_name = model[0] if model else None
-    provider = os.environ.get("UPSKILL_PROVIDER", "openai")
-    no_baseline = configured_bool("UPSKILL_NO_BASELINE", default=False)
 
     try:
         result = asyncio.run(
             _evaluate_direct_skill(
                 skill=skill,
                 test_cases=test_cases,
-                model=model_name,
+                model=model,
                 provider=provider,
                 base_url=base_url,
                 api_key=api_key,
-                run_baseline=not no_baseline,
+                run_baseline=True,
             )
         )
     except Exception as exc:  # noqa: BLE001 - external evaluator errors are normalized.
         return UpskillEvaluation(status="failed", reason=str(exc))
+
+    errors = _direct_result_errors(result)
+    if errors:
+        return UpskillEvaluation(
+            status="failed",
+            artifact_dir=str(artifact_dir),
+            validation_errors=errors,
+            reason="upskill provider did not return complete results",
+        )
 
     baseline_avg_tokens = _average_tokens(result.baseline_total_tokens, len(test_cases))
     skilled_avg_tokens = _average_tokens(result.with_skill_total_tokens, len(test_cases))
@@ -237,6 +273,55 @@ def _run_direct_openai_compatible_eval(*, skill_root: Path, artifact_dir: Path) 
         command=["upskill-python-api", str(skill_root)],
         artifact_dir=str(artifact_dir),
     )
+
+
+def _validated_tests_path() -> tuple[Path | None, str | None]:
+    value = os.environ.get("UPSKILL_TESTS_PATH")
+    if not value:
+        return None, "set UPSKILL_TESTS_PATH to JSON cases with expected.contains assertions"
+
+    path = Path(value)
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return None, f"UPSKILL_TESTS_PATH is not readable JSON: {exc}"
+
+    cases = payload.get("cases") if isinstance(payload, dict) else payload
+    if not isinstance(cases, list) or not cases:
+        return None, "UPSKILL_TESTS_PATH must contain a non-empty cases list"
+    for index, case in enumerate(cases, start=1):
+        expected = case.get("expected") if isinstance(case, dict) else None
+        contains = expected.get("contains") if isinstance(expected, dict) else None
+        if not isinstance(contains, str) or not contains.strip():
+            return None, f"UPSKILL_TESTS_PATH case {index} must define non-empty expected.contains"
+    return path, None
+
+
+def _upskill_api_key(*, base_url: str | None) -> str | None:
+    if base_url:
+        return os.environ.get("UPSKILL_API_KEY") or os.environ.get("OPENAI_API_KEY")
+    return os.environ.get("OPENAI_API_KEY")
+
+
+def _direct_result_errors(result: Any) -> list[str]:
+    """Return visible evidence failures instead of silently scoring partial runs."""
+    errors: list[str] = []
+    for label in ("baseline", "with_skill"):
+        items = getattr(result, f"{label}_results", [])
+        if not items:
+            errors.append(f"{label} evaluation returned no test results")
+            continue
+        for index, item in enumerate(items, start=1):
+            error = getattr(item, "error", None)
+            output = getattr(item, "output", None)
+            tokens = getattr(item, "tokens_used", None)
+            if error:
+                errors.append(str(error))
+            elif not isinstance(output, str) or not output.strip():
+                errors.append(f"{label} case {index} returned an empty response")
+            elif not isinstance(tokens, int) or tokens <= 0:
+                errors.append(f"{label} case {index} did not report token usage")
+    return errors
 
 
 def _direct_result_looks_empty_provider_failure(
@@ -497,33 +582,6 @@ def _load_upskill_test_cases(tests_path: Path, test_case_type: Any) -> list[Any]
     if not isinstance(cases, list):
         raise ValueError("UPSKILL_TESTS_PATH must point to a JSON list or an object with cases.")
     return [test_case_type(**case) for case in cases]
-
-
-def _default_upskill_test_cases(*, skill_root: Path, test_case_type: Any) -> list[Any]:
-    """Build one small deterministic test case when no external tests file is configured."""
-    skill_file = skill_root / "SKILL.md"
-    name = skill_root.name
-    description = name
-    try:
-        content = skill_file.read_text(encoding="utf-8")
-    except OSError:
-        content = ""
-    if content.startswith("---\n"):
-        closing_index = content.find("\n---\n", 4)
-        if closing_index != -1:
-            frontmatter = _parse_simple_yaml(content[4:closing_index])
-            name = str(frontmatter.get("name") or name)
-            description = str(frontmatter.get("description") or description)
-
-    return [
-        test_case_type(
-            input=(
-                f"Use the {name} skill for this task. "
-                f"Task description: {description}"
-            ),
-            expected={"mentions_skill_purpose": True},
-        )
-    ]
 
 
 def _average_tokens(total_tokens: int, test_count: int) -> int | None:

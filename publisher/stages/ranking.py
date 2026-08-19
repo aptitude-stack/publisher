@@ -167,7 +167,12 @@ class RankingStage(PublisherStage):
             label = "poor"
         context.ranking.label = label
 
+        upskill = context.metadata.extra.get("upskill_evaluation", {})
+        upskill_status = upskill.get("status") if isinstance(upskill, dict) else None
+
         if context.security.decision == "block":
+            decision = "block"
+        elif upskill_status != "scored" or context.performance_exam.score is None:
             decision = "block"
         elif not context.validation.passed or context.security.decision == "review_required":
             decision = "review_required"

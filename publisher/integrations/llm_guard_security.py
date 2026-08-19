@@ -66,26 +66,30 @@ def run_llm_guard_security_scan(
     findings: list[dict[str, Any]] = []
     scanner_scores: dict[str, dict[str, float]] = {}
     scanner_validity: dict[str, dict[str, bool]] = {}
+    expected_scanners = set(_scanner_names(scanners))
+    scanned_fields = 0
 
     for field_name, raw_text in field_values.items():
         text = _bounded_text(raw_text)
         if not text.strip():
             continue
+        scanned_fields += 1
         try:
             with _suppress_llm_guard_output():
                 _sanitized, results_valid, results_score = scan_prompt(scanners, text)
         except Exception as exc:  # pragma: no cover - scanner/runtime version drift
-            findings.append(
-                _finding(
-                    check="llm_guard:scan_error",
-                    severity="high",
-                    field_name=field_name,
-                    reason=f"LLM Guard failed while scanning field: {exc}",
-                    evidence="scanner_error",
-                    score=None,
-                )
+            return _failed_result(
+                llm_guard_dir=llm_guard_dir,
+                reason=f"LLM Guard failed while scanning {field_name}: {exc}",
             )
-            continue
+
+        returned_scanners = {str(name) for name in results_valid}
+        scored_scanners = {str(name) for name in results_score}
+        if returned_scanners != expected_scanners or scored_scanners != expected_scanners:
+            return _failed_result(
+                llm_guard_dir=llm_guard_dir,
+                reason=f"LLM Guard returned missing scanner results for {field_name}",
+            )
 
         for scanner_name, is_valid in results_valid.items():
             normalized_name = str(scanner_name)
@@ -104,6 +108,12 @@ def run_llm_guard_security_scan(
                     score=score,
                 )
             )
+
+    if not scanned_fields:
+        return _failed_result(
+            llm_guard_dir=llm_guard_dir,
+            reason="LLM Guard did not receive any non-empty scan targets",
+        )
 
     score = _score_from_findings(findings)
     artifact = {
@@ -126,6 +136,20 @@ def run_llm_guard_security_scan(
         findings=findings,
         checks_run=_scanner_names(scanners),
         artifact_dir=str(llm_guard_dir),
+    )
+
+
+def _failed_result(*, llm_guard_dir: Path, reason: str) -> LlmGuardSecurityResult:
+    """Persist and return an unscored evaluator failure."""
+    artifact = {"status": "failed", "score": None, "reason": reason}
+    (llm_guard_dir / "llm_guard.report.json").write_text(
+        json.dumps(artifact, indent=2, ensure_ascii=True) + "\n",
+        encoding="utf-8",
+    )
+    return LlmGuardSecurityResult(
+        status="failed",
+        artifact_dir=str(llm_guard_dir),
+        reason=reason,
     )
 
 

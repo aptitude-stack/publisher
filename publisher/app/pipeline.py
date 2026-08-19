@@ -7,6 +7,7 @@ from pathlib import Path
 from publisher.gates.discovery import DiscoveryGate
 from publisher.gates.identity import IdentityGate
 from publisher.gates.metadata import MetadataGate
+from publisher.gates.performance_exam import PerformanceExamGate
 from publisher.gates.security import SecurityGate
 from publisher.gates.validation import ValidationGate
 from publisher.domain.models import PublishContext, SkillSource
@@ -24,7 +25,7 @@ from publisher.stages.validation import ValidationStage
 class PublisherPipeline:
     """Runs the publisher stages in the expected order."""
 
-    _NON_TERMINAL_FAILED_GATES = {"security"}
+    _NON_TERMINAL_FAILED_GATES = {"security", "performance_exam"}
 
     def __init__(self) -> None:
         self._stages = (
@@ -44,6 +45,7 @@ class PublisherPipeline:
             "metadata": MetadataGate(),
             "security": SecurityGate(),
             "validation": ValidationGate(),
+            "performance_exam": PerformanceExamGate(),
         }
 
     def create_context(

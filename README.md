@@ -275,21 +275,40 @@ The upload bundle is a deterministic `.tar.zst` archive built from the skill fol
 
 LLM Guard runs locally over the skill package content. It scans the primary `SKILL.md`, metadata fields, schemas, companion markdown, scripts, references, and other text files for prompt injection, secrets, and hidden text.
 
-Security publishing decisions depend on LLM Guard. If LLM Guard is disabled, unavailable, or failing, the security stage records that evaluator status and blocks publishing because security has no local fallback source.
+Security publishing decisions depend on LLM Guard. If it is unavailable or
+fails, the security stage blocks publishing because security has no local
+fallback source. An explicit `PUBLISHER_LLM_GUARD_ENABLED=false` bypass is
+recorded as disabled.
 
-Upskill can run directly when configured:
+Upskill evaluates publishable skills through official OpenAI by default. It
+requires an OpenAI key and a real test-case file; the publisher does not invent
+generic passing cases.
 
 ```bash
-export UPSKILL_MODELS=haiku,sonnet
+export OPENAI_API_KEY=...
+export UPSKILL_PROVIDER=openai
+export UPSKILL_MODELS=gpt-4o-mini
+export UPSKILL_TESTS_PATH=/absolute/path/to/upskill-tests.json
+export UPSKILL_NO_BASELINE=false
 ```
 
-or through an explicit command template:
+The test file must contain at least one case with a non-empty
+`expected.contains` assertion:
 
-```bash
-export PUBLISHER_UPSKILL_COMMAND='upskill eval {skill_path}'
+```json
+{"cases":[{"input":"Review this Python function.","expected":{"contains":"type hint"}}]}
 ```
 
-The Upskill command template supports `{skill_path}`, `{skill_file}`, `{artifact_dir}`, and `{runs_dir}` when the selected command supports it. If Upskill is disabled, unavailable, or failing, the performance exam records that evaluator status and produces no score because performance has no local fallback source.
+Set `UPSKILL_BASE_URL` only for a custom OpenAI-compatible endpoint. Missing,
+partial, empty, or failed Upskill evidence blocks publishing and is recorded in
+the evaluator artifact. A scored but non-beneficial result remains reviewable
+quality evidence rather than an evaluator outage.
+
+For a live smoke check, run `aptitude-publisher inspect /path/to/skill` with
+the variables above, then verify the performance artifact records
+`status: scored`, `gpt-4o-mini`, nonzero token metrics, and no validation
+errors. This sends skill and test content to OpenAI; see
+[OpenAI API data controls](https://developers.openai.com/api/docs/guides/your-data#default-usage-policies-by-endpoint).
 
 ## What Works Today
 

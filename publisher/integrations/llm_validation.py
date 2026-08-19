@@ -78,7 +78,7 @@ def run_llm_skill_validation(*, skill_root: Path, skill_file: Path) -> LlmValida
 def _enabled() -> bool:
     value = os.environ.get("PUBLISHER_LLM_VALIDATION_ENABLED")
     if value is None:
-        return bool(_api_key())
+        return False
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
