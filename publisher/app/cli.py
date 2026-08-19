@@ -196,6 +196,11 @@ def _add_shared_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("skill_path", help="path to the skill folder")
     parser.add_argument("--slug", help="override the skill slug for registry publish")
     parser.add_argument("--version", help="override the semantic version for this publish")
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="show detailed structure, risk, and quality summaries",
+    )
     _add_publish_metadata_arguments(
         parser,
         default_trust_tier="untrusted",
@@ -241,7 +246,7 @@ def _add_publish_metadata_arguments(
 
 def _run_inspect(args: argparse.Namespace) -> int:
     context = _run_pipeline(args)
-    _print_pipeline_report(context)
+    _print_pipeline_report(context, verbose=args.verbose)
     return 0 if _publish_payload_ready(context) and context.ranking.publish_decision != "block" else 1
 
 
@@ -260,7 +265,7 @@ def _run_publish(args: argparse.Namespace) -> int:
         return 1
 
     context = _run_pipeline(args)
-    _print_pipeline_report(context)
+    _print_pipeline_report(context, verbose=args.verbose)
     if not _publish_payload_ready(context) or context.ranking.publish_decision == "block":
         print("\nPublish blocked before registry upload.")
         _print_gate_failures(context)
@@ -726,72 +731,140 @@ def _run_pipeline(args: argparse.Namespace, *, skill_path: str | None = None):
     return pipeline.run(context)
 
 
-def _print_pipeline_report(context) -> None:
-    print(_separator())
-    print(f"Aptitude Publisher {_publisher_cli_version()}")
-    print(_separator())
-    print(f"cli version     {_publisher_cli_version()}")
-    print(f"skill path      {context.inventory.skill_root}")
-    print(f"slug            {context.identity.slug}")
-    print(f"skill version   {context.identity.version}")
-    print(f"intent          {context.identity.intent}")
-    print(f"trust tier      {context.source.trust_tier}")
-    print(f"namespace       {context.source.namespace}")
-    print(f"artifact origin {context.source.artifact_origin}")
+def _print_pipeline_report(context, *, verbose: bool = False) -> None:
+    rows = _report_phase_rows(context)
+    if not verbose:
+        print("Phase      Grade       Reason")
+        print(_separator())
+        for phase, grade, reason in rows:
+            print(f"{phase:<10} {grade:<11} {reason}")
+        return
 
+    phase_rows = {phase: (grade, reason) for phase, grade, reason in rows}
+    structure_grade, structure_reason = phase_rows["Structure"]
+    risk_grade, risk_reason = phase_rows["Risk"]
+    quality_grade, quality_reason = phase_rows["Quality"]
+    _print_report_block(
+        "Structure Validation",
+        [
+            ("Grade", structure_grade),
+            ("Reason", structure_reason),
+            ("Warnings", str(len(context.validation.warnings))),
+        ],
+    )
+    _print_report_block(
+        "Risk Validation",
+        [
+            ("Grade", risk_grade),
+            ("LLM Guard status", _evaluation_status(context, "llm_guard_security")),
+            ("Findings", str(len(context.security.findings))),
+            ("Reason", risk_reason),
+        ],
+    )
+    _print_report_block(
+        "Quality Evaluation",
+        [
+            ("Grade", quality_grade),
+            ("Upskill status", _evaluation_status(context, "upskill_evaluation")),
+            ("Performance", str(context.performance_exam.score)),
+            ("Maturity", str(context.metadata.maturity_score)),
+            ("Lift", str(context.performance_exam.skill_lift)),
+            ("Token delta", str(context.performance_exam.token_delta)),
+            ("Publish decision", str(context.ranking.publish_decision)),
+            ("Reason", quality_reason),
+        ],
+    )
+
+
+def _print_report_block(title: str, rows: list[tuple[str, str]]) -> None:
     print("\n" + _separator())
-    print("Evaluation Summary")
+    print(title)
     print(_separator())
-    llm_guard_status = context.metadata.extra.get("llm_guard_security", {})
-    upskill_status = context.metadata.extra.get("upskill_evaluation", {})
-    print(f"validation      {'passed' if context.validation.passed else 'failed'}")
-    print(f"llm guard status {llm_guard_status.get('status') if isinstance(llm_guard_status, dict) else None}")
-    print(f"security score  {context.security.score}")
-    print(f"security gate   {context.security.decision}")
-    print(f"upskill status  {upskill_status.get('status') if isinstance(upskill_status, dict) else None}")
-    print(f"performance     {context.performance_exam.score}")
-    print(f"maturity score  {context.metadata.maturity_score}")
-    print(f"lift            {context.performance_exam.skill_lift}")
-    print(f"token delta     {context.performance_exam.token_delta}")
-    print(f"ranking         {context.ranking.label}")
-    print(f"publish decision {context.ranking.publish_decision}")
+    for label, value in rows:
+        print(f"{label:<16} {value}")
 
-    print("\n" + _separator())
-    print("Stages")
-    print(_separator())
-    for snapshot in context.stage_history:
-        print(f"{snapshot.stage_name:<18} {snapshot.status}")
 
-    if context.gate_history:
-        print("\n" + _separator())
-        print("Gate Results")
-        print(_separator())
-        for gate in context.gate_history:
-            status = "passed" if gate.passed else "failed"
-            print(f"{gate.gate_name:<18} {status}")
-            if gate.explanation:
-                print(f"  why           {gate.explanation}")
-            for issue in gate.blocking_issues:
-                print(f"  blocking      {issue}")
-            for warning in gate.warnings:
-                print(f"  warning       {warning}")
+def _evaluation_status(context, key: str) -> str:
+    value = context.metadata.extra.get(key)
+    return str(value.get("status", "not run")) if isinstance(value, dict) else "not run"
 
-    if context.security.findings:
-        print("\n" + _separator())
-        print("Security Findings")
-        print(_separator())
-        for finding in context.security.findings:
-            print(
-                f"{finding['severity']:<8} {finding['check']:<40} "
-                f"{finding['field']:<24} {finding['evidence']}"
-            )
 
-    if context.validation.errors:
-        print("\n" + _separator())
-        print("Validation Errors")
-        print(_separator())
-        for error in context.validation.errors:
-            print(f"- {error}")
+def _report_phase_rows(context) -> list[tuple[str, str, str]]:
+    """Return the three user-facing evaluation phases without pipeline internals."""
+    structure_gates = _phase_gates(context, {"discovery_gate", "identity_gate", "metadata_gate", "validation_gate"})
+    risk_gates = _phase_gates(context, {"security_gate"})
+    quality_gates = _phase_gates(context, {"performance_exam_gate"})
+
+    structure_issue = _first_gate_issue(structure_gates) or _first_item(context.validation.errors)
+    structure_warning = _first_gate_warning(structure_gates) or _first_item(context.validation.warnings)
+    structure_grade = "failed" if structure_issue or not context.validation.passed else "passed"
+    structure_reason = structure_issue or structure_warning or "Structure checks passed."
+
+    risk_issue = _first_gate_issue(risk_gates) or _first_security_finding(context)
+    risk_grade = context.security.decision or ("failed" if risk_issue else "not scored")
+    if context.security.score is not None:
+        risk_grade = f"{risk_grade} ({context.security.score:.2f})"
+    risk_reason = risk_issue or "No blocking risk found."
+
+    quality_status = context.metadata.extra.get("upskill_evaluation", {})
+    quality_failed = (
+        isinstance(quality_status, dict) and quality_status.get("status") == "failed"
+    ) or bool(_first_gate_issue(quality_gates))
+    quality_grade = "failed" if quality_failed else (context.ranking.label or "not evaluated")
+    quality_reason = (
+        _first_item(quality_status.get("validation_errors", []))
+        if isinstance(quality_status, dict)
+        else None
+    )
+    quality_reason = quality_reason or _first_gate_issue(quality_gates)
+    quality_reason = quality_reason or (
+        str(quality_status.get("reason"))
+        if isinstance(quality_status, dict) and quality_status.get("reason")
+        else None
+    )
+    quality_reason = quality_reason or (
+        "Quality evaluation completed."
+        if context.performance_exam.score is not None
+        else "No scored quality evaluation was returned."
+    )
+
+    return [
+        ("Structure", structure_grade, structure_reason),
+        ("Risk", risk_grade, risk_reason),
+        ("Quality", quality_grade, quality_reason),
+    ]
+
+
+def _phase_gates(context, names: set[str]):
+    return [gate for gate in context.gate_history if gate.gate_name in names]
+
+
+def _first_gate_issue(gates) -> str | None:
+    for gate in gates:
+        if not gate.passed:
+            return _first_item(gate.blocking_issues) or gate.explanation or "Validation failed."
+    return None
+
+
+def _first_gate_warning(gates) -> str | None:
+    for gate in gates:
+        warning = _first_item(gate.warnings)
+        if warning:
+            return warning
+    return None
+
+
+def _first_security_finding(context) -> str | None:
+    finding = context.security.findings[0] if context.security.findings else None
+    if not finding:
+        return None
+    severity = finding.get("severity", "unknown")
+    check = finding.get("check", "security check")
+    return f"{severity}: {check}"
+
+
+def _first_item(values) -> str | None:
+    return str(values[0]) if values else None
 
 
 def _print_gate_failures(context) -> None:

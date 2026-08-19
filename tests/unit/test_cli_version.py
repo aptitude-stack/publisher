@@ -10,10 +10,12 @@ from publisher.app.cli import (
     BatchUploadResult,
     _build_parser,
     _batch_progress,
+    _print_pipeline_report,
     _publisher_cli_version,
     _run_admin_batch_upload,
     main,
 )
+from publisher.domain.models import PublishContext, SkillSource
 from publisher.registry.client import ExistingSkill, ExistingSkillVersion
 
 
@@ -70,6 +72,82 @@ def test_menu_subcommand_is_not_registered() -> None:
 
     with pytest.raises(SystemExit):
         parser.parse_args(["menu"])
+
+
+def test_pipeline_report_defaults_to_a_three_phase_summary(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A normal scan must not dump implementation-stage diagnostics."""
+    context = PublishContext(source=SkillSource(file_path="skills/example"))
+    context.validation.passed = True
+    context.security.score = 1.0
+    context.security.decision = "allow"
+    context.metadata.maturity_score = 0.4
+    context.metadata.extra["upskill_evaluation"] = {"status": "failed"}
+    context.ranking.label = "review"
+    context.ranking.publish_decision = "allow"
+    context.add_gate_result(gate_name="discovery_gate", passed=True)
+    context.add_gate_result(gate_name="security_gate", passed=True)
+    context.add_gate_result(gate_name="validation_gate", passed=True)
+
+    _print_pipeline_report(context)
+
+    output = capsys.readouterr().out
+    assert "Phase" in output
+    assert "Structure" in output
+    assert "Risk" in output
+    assert "Quality" in output
+    assert "Stages" not in output
+    assert "Gate Results" not in output
+    assert "Security score" not in output
+
+
+def test_pipeline_report_verbose_keeps_only_phase_summaries(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Verbose output must reveal phase detail, not the old pipeline trace."""
+    context = PublishContext(source=SkillSource(file_path="skills/example"))
+    context.validation.passed = True
+    context.security.score = 1.0
+    context.security.decision = "allow"
+    context.ranking.label = "review"
+    context.add_gate_result(gate_name="discovery_gate", passed=True)
+    context.add_gate_result(gate_name="security_gate", passed=True)
+    context.add_gate_result(gate_name="validation_gate", passed=True)
+
+    _print_pipeline_report(context, verbose=True)
+
+    output = capsys.readouterr().out
+    assert "Phase      Grade" not in output
+    assert "Structure Validation" in output
+    assert "Risk Validation" in output
+    assert "Quality Evaluation" in output
+    assert "LLM Guard status" in output
+    assert "Upskill status" in output
+    assert "Stages" not in output
+    assert "Gate Results" not in output
+
+
+def test_inspect_parser_supports_verbose_phase_summaries() -> None:
+    parser = _build_parser()
+
+    args = parser.parse_args(["inspect", "skills/example", "--verbose"])
+
+    assert args.verbose is True
+
+
+def test_pipeline_report_summarizes_the_first_security_finding(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    context = PublishContext(source=SkillSource(file_path="skills/example"))
+    context.validation.passed = True
+    context.security.score = 0.6
+    context.security.decision = "review_required"
+    context.security.findings = [{"severity": "high", "check": "prompt injection"}]
+
+    _print_pipeline_report(context)
+
+    assert "high: prompt injection" in capsys.readouterr().out
 
 
 def test_admin_batch_upload_parser_uses_admin_token_env(

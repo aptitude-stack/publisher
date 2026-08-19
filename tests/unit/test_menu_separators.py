@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from io import StringIO
 from pathlib import Path
 
 import pytest
+from rich.console import Console
 
 from publisher.app import menu
+from publisher.domain.models import PublishContext, SkillSource
 from publisher.registry.client import ExistingSkill, ExistingSkillVersion
 
 
@@ -16,6 +19,27 @@ def test_render_step_separator_uses_stream_safe_glyphs() -> None:
     assert menu._render_step_separator(3) == "───"
     assert menu._render_step_separator(3, _AsciiStream()) == "---"
     assert menu._render_step_separator(0, _AsciiStream()) == "-"
+
+
+def test_interactive_pipeline_report_shows_only_three_evaluation_phases(monkeypatch) -> None:
+    """The wizard must not reintroduce the detailed report by default."""
+    output = StringIO()
+    monkeypatch.setattr(menu, "CONSOLE", Console(file=output, width=120))
+    context = PublishContext(source=SkillSource(file_path="skills/example"))
+    context.validation.passed = True
+    context.security.score = 1.0
+    context.security.decision = "allow"
+    context.ranking.label = "review"
+
+    menu._render_pipeline_report(context)
+
+    rendered = output.getvalue()
+    assert "Structure" in rendered
+    assert "Risk" in rendered
+    assert "Quality" in rendered
+    assert "Stages" not in rendered
+    assert "Gate Results" not in rendered
+    assert "Skill Identity" not in rendered
 
 
 def test_build_publish_plan_prints_separators_between_decisions(

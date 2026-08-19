@@ -11,7 +11,7 @@ import sys
 from typing import Any, Literal, Sequence, TypeVar
 
 from rich import box
-from rich.console import Console, Group
+from rich.console import Console
 from rich.panel import Panel
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
 from rich.table import Table
@@ -29,6 +29,7 @@ from publisher.app.cli import (
     _preflight_identity_from_skill_path,
     _publisher_cli_version,
     _registry_result_lines,
+    _report_phase_rows,
     _relationship_alert_lines,
     _relationship_check_token,
     _run_admin_batch_upload,
@@ -606,247 +607,19 @@ def _render_plan(plan: PublishPlan) -> None:
 
 
 def _render_pipeline_report(context: PublishContext) -> None:
-    summary = Table.grid(expand=True, padding=(0, 2))
-    summary.add_column(style=THEME.text_muted, no_wrap=True)
-    summary.add_column(style=THEME.text_body)
-    summary.add_row("CLI version", _publisher_cli_version())
-    summary.add_row("Skill path", str(context.inventory.skill_root))
-    summary.add_row("Slug", context.identity.slug)
-    summary.add_row("Skill version", context.identity.version)
-    summary.add_row("Intent", context.identity.intent)
-    summary.add_row("Trust tier", context.source.trust_tier)
-    summary.add_row("Namespace", context.source.namespace)
-    summary.add_row("Artifact origin", context.source.artifact_origin)
-
-    evaluation = Table(
+    summary = Table(
         show_header=True,
         header_style=THEME.text_muted,
         border_style=THEME.border_primary,
         box=_table_box_for_stream(sys.stdout),
         expand=True,
     )
-    evaluation.add_column("Signal", style=THEME.text_muted)
-    evaluation.add_column("Value", style=THEME.text_body)
-    evaluation.add_row("Validation", "passed" if context.validation.passed else "failed")
-    evaluation.add_row("LLM Guard status", str(context.metadata.extra.get("llm_guard_security", {}).get("status")))
-    evaluation.add_row("Security score", str(context.security.score))
-    evaluation.add_row("Security gate", context.security.decision)
-    evaluation.add_row("Upskill status", str(context.metadata.extra.get("upskill_evaluation", {}).get("status")))
-    evaluation.add_row("Performance", str(context.performance_exam.score))
-    evaluation.add_row("Maturity", str(context.metadata.maturity_score))
-    evaluation.add_row("Lift", str(context.performance_exam.skill_lift))
-    evaluation.add_row("Token delta", str(context.performance_exam.token_delta))
-    evaluation.add_row("Ranking", context.ranking.label)
-    evaluation.add_row("Publish decision", context.ranking.publish_decision)
-
-    stages = Table(
-        show_header=True,
-        header_style=THEME.text_muted,
-        border_style=THEME.border_primary,
-        box=_table_box_for_stream(sys.stdout),
-        expand=True,
-    )
-    stages.add_column("Stage", style=THEME.text_body)
-    stages.add_column("Status", style=THEME.text_muted)
-    for snapshot in context.stage_history:
-        stages.add_row(snapshot.stage_name, snapshot.status)
-
-    gates = Table(
-        show_header=True,
-        header_style=THEME.text_muted,
-        border_style=THEME.border_primary,
-        box=_table_box_for_stream(sys.stdout),
-        expand=True,
-    )
-    gates.add_column("Gate", style=THEME.text_body)
-    gates.add_column("Status", style=THEME.text_muted, no_wrap=True)
-    gates.add_column("Why", style=THEME.text_body)
-    for gate in context.gate_history:
-        status = "passed" if gate.passed else "failed"
-        explanation = gate.explanation or ""
-        if gate.blocking_issues:
-            explanation = "\n".join(
-                [explanation, *[f"Blocking: {issue}" for issue in gate.blocking_issues]]
-            ).strip()
-        if gate.warnings:
-            explanation = "\n".join(
-                [explanation, *[f"Warning: {warning}" for warning in gate.warnings]]
-            ).strip()
-        gates.add_row(gate.gate_name, status, explanation)
-
-    panels: list[Panel] = [
-        _frame(summary, title="Skill Identity"),
-        _frame(evaluation, title="Evaluation Summary"),
-        _frame(stages, title="Stages"),
-    ]
-    if context.gate_history:
-        panels.append(_frame(gates, title="Gate Results"))
-    if context.validation.errors:
-        panels.append(
-            _frame(
-                "\n".join(f"- {error}" for error in context.validation.errors),
-                title="Validation Errors",
-                border_style="red",
-            )
-        )
-    llm_guard_status = context.metadata.extra.get("llm_guard_security")
-    if isinstance(llm_guard_status, dict):
-        security_evaluator = Table(
-            show_header=True,
-            header_style=THEME.text_muted,
-            border_style=THEME.border_primary,
-            box=_table_box_for_stream(sys.stdout),
-            expand=True,
-        )
-        security_evaluator.add_column("Signal", style=THEME.text_muted)
-        security_evaluator.add_column("Value", style=THEME.text_body)
-        security_evaluator.add_row("Evaluator status", str(llm_guard_status.get("status")))
-        security_evaluator.add_row("Score", str(llm_guard_status.get("score")))
-        security_evaluator.add_row("Decision", context.security.decision)
-        security_evaluator.add_row("Checks", ", ".join(llm_guard_status.get("checks_run") or []) or "none")
-        security_evaluator.add_row("Findings", _severity_summary(context))
-        security_evaluator.add_row("Score bar", _score_bar(context.security.score))
-        security_evaluator.add_row("Artifact dir", str(llm_guard_status.get("artifact_dir")))
-        security_evaluator.add_row("Reason", str(llm_guard_status.get("reason")))
-        security_explanation = _llm_guard_explanation(context)
-        if security_explanation:
-            security_evaluator.add_row("Explanation", security_explanation)
-        if context.security.notes:
-            security_evaluator.add_row("Notes", "\n".join(context.security.notes))
-        border_style = "red" if llm_guard_status.get("status") in {"not_available", "failed"} else "yellow"
-        panels.append(_frame(security_evaluator, title="LLM Guard Evaluator", border_style=border_style))
-    if context.security.findings:
-        findings = Table(
-            show_header=True,
-            header_style=THEME.text_muted,
-            border_style=THEME.border_primary,
-            box=_table_box_for_stream(sys.stdout),
-            expand=True,
-        )
-        findings.add_column("Severity", style=THEME.text_body)
-        findings.add_column("Check", style=THEME.text_muted)
-        findings.add_column("Field", style=THEME.text_muted)
-        findings.add_column("Evidence", style=THEME.text_body)
-        for finding in context.security.findings:
-            findings.add_row(
-                str(finding.get("severity", "")),
-                str(finding.get("check", "")),
-                str(finding.get("field", "")),
-                str(finding.get("evidence", "")),
-            )
-        panels.append(_frame(findings, title="Security Findings", border_style="red"))
-    if context.performance_exam.score is not None or context.performance_exam.notes:
-        upskill = Table(
-            show_header=True,
-            header_style=THEME.text_muted,
-            border_style=THEME.border_primary,
-            box=_table_box_for_stream(sys.stdout),
-            expand=True,
-        )
-        upskill.add_column("Signal", style=THEME.text_muted)
-        upskill.add_column("Value", style=THEME.text_body)
-        upskill_status = context.metadata.extra.get("upskill_evaluation", {})
-        if isinstance(upskill_status, dict):
-            upskill.add_row("Evaluator status", str(upskill_status.get("status")))
-            upskill.add_row("Reason", str(upskill_status.get("reason")))
-        upskill.add_row("Status", "passed" if context.performance_exam.passed else "not passed")
-        upskill.add_row("Score", str(context.performance_exam.score))
-        upskill.add_row("Maturity score", str(context.metadata.maturity_score))
-        upskill.add_row("Maturity source", _maturity_source_summary(context))
-        upskill.add_row("Models", ", ".join(context.performance_exam.models_tested) or "none")
-        upskill.add_row("Test cases", str(context.performance_exam.test_case_count))
-        upskill.add_row("Baseline success", str(context.performance_exam.baseline_success_rate))
-        upskill.add_row("Skilled success", str(context.performance_exam.skilled_success_rate))
-        upskill.add_row("Skill lift", str(context.performance_exam.skill_lift))
-        upskill.add_row("Baseline avg tokens", str(context.performance_exam.baseline_avg_tokens))
-        upskill.add_row("Skilled avg tokens", str(context.performance_exam.skilled_avg_tokens))
-        upskill.add_row("Token delta", str(context.performance_exam.token_delta))
-        upskill.add_row("Efficiency", str(context.performance_exam.efficiency_label))
-        upskill.add_row("Token estimate source", str(context.metadata.extra.get("token_estimate_source")))
-        explanation = _upskill_explanation(context)
-        if explanation:
-            upskill.add_row("Explanation", explanation)
-        if context.performance_exam.notes:
-            upskill.add_row("Notes", "\n".join(context.performance_exam.notes))
-        panels.append(_frame(upskill, title="Upskill Evaluator", border_style="yellow"))
-    CONSOLE.print(Group(*_with_phase_separators(panels)))
-
-
-def _with_phase_separators(panels: Sequence[Panel]) -> list[Any]:
-    separated: list[Any] = []
-    separator = Text(
-        _render_step_separator(CONSOLE.size.width, sys.stdout),
-        style=THEME.border_secondary,
-    )
-    for index, panel in enumerate(panels):
-        if index:
-            separated.append(separator)
-        separated.append(panel)
-    return separated
-
-
-def _upskill_explanation(context: PublishContext) -> str:
-    exam = context.performance_exam
-    if exam.score is None:
-        return "Upskill did not return a scored performance result."
-    if exam.skill_lift is not None and exam.skill_lift <= 0:
-        return (
-            "Upskill scored the run, but the model did not improve with the skill "
-            "because baseline and skilled success were the same."
-        )
-    if exam.token_delta is not None and exam.token_delta > 0:
-        return "Upskill scored the run, but the skill used more tokens than the baseline."
-    if exam.passed:
-        return "Upskill showed measurable performance evidence for the skill."
-    return "Upskill scored the run, but its pass criteria were not met."
-
-
-def _maturity_source_summary(context: PublishContext) -> str:
-    source = context.metadata.extra.get("maturity_score_source")
-    if not isinstance(source, dict):
-        return "not generated"
-    return (
-        f"validation={source.get('validation_score')}, "
-        f"upskill={source.get('upskill_score')}, "
-        f"formula={source.get('formula')}"
-    )
-
-
-def _llm_guard_explanation(context: PublishContext) -> str:
-    status = context.metadata.extra.get("llm_guard_security", {}).get("status")
-    score = context.security.score
-    if status != "scored":
-        return "LLM Guard did not return a scored security result, so the security gate blocks publishing."
-    if score is None:
-        return "LLM Guard completed but no security score was available."
-    if context.security.severity_counts.get("critical", 0) > 0:
-        return "LLM Guard found a critical security issue, so publishing is blocked."
-    if context.security.severity_counts.get("high", 0) > 0:
-        return "LLM Guard found high-risk content, so the skill requires review."
-    if context.security.findings:
-        return "LLM Guard found non-blocking security signals that should be reviewed."
-    return "LLM Guard found no prompt injection, secret, or hidden-text issues in the scanned skill content."
-
-
-def _severity_summary(context: PublishContext) -> str:
-    counts = context.security.severity_counts
-    ordered = ("critical", "high", "medium", "low")
-    parts = [f"{severity}={counts.get(severity, 0)}" for severity in ordered]
-    return ", ".join(parts)
-
-
-def _score_bar(score: float | None) -> Text:
-    if score is None:
-        return Text("not scored", style="red")
-    bounded = max(0.0, min(1.0, score))
-    filled = round(bounded * 20)
-    empty = 20 - filled
-    style = "green" if bounded >= 0.8 else "yellow" if bounded >= 0.5 else "red"
-    text = Text()
-    text.append("█" * filled, style=style)
-    text.append("░" * empty, style=THEME.border_secondary)
-    text.append(f" {bounded:.2f}", style=THEME.text_body)
-    return text
+    summary.add_column("Phase", style=THEME.text_body)
+    summary.add_column("Grade", style=THEME.text_muted, no_wrap=True)
+    summary.add_column("Reason", style=THEME.text_body)
+    for phase, grade, reason in _report_phase_rows(context):
+        summary.add_row(phase, grade, reason)
+    CONSOLE.print(_frame(summary, title="Evaluation Summary"))
 
 
 def _render_bundle(context: PublishContext, bundle_bytes: bytes) -> None:

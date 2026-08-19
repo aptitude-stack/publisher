@@ -25,7 +25,7 @@ Primary commands:
 - `aptitude-publisher admin-batch-upload /path/to/skill-a /path/to/skill-b`
 - `aptitude-publisher mcp`
 
-Running `aptitude-publisher` without a subcommand launches the guided review-first wizard. `inspect` runs the full local pipeline and prints evaluation results without uploading. `publish` runs the same gates, builds the upload bundle, checks registry state when tokens are available, and uploads only when the publish decision allows it.
+Running `aptitude-publisher` without a subcommand launches the guided review-first wizard. `inspect` runs the full local pipeline and prints a compact Structure/Risk/Quality summary without uploading; add `--verbose` for those three detailed phase summaries. `publish` runs the same gates, builds the upload bundle, checks registry state when tokens are available, and uploads only when the publish decision allows it.
 `admin-batch-upload` runs the same local gates for multiple skill folders concurrently with the fast scan profile and verified trust defaults, uploads each accepted skill with an admin token, shows a progress bar, and prints only a final summary.
 When `APTITUDE_ADMIN_TOKEN`, `APTITUDE_REGISTRY_ADMIN_TOKEN`, or `REGISTRY_ADMIN_TOKEN` is set, the wizard also offers an admin batch-upload path that accepts one directory containing skill folders and starts immediately with those defaults.
 
