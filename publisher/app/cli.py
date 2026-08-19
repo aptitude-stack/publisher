@@ -764,6 +764,7 @@ def _evaluation_status(context, key: str) -> str:
 def _report_detail_sections(context) -> list[tuple[str, list[tuple[str, str]]]]:
     phase_rows = {phase: (grade, reason) for phase, grade, reason in _report_phase_rows(context)}
     structure_grade, structure_reason = phase_rows["Structure"]
+    readiness_grade, readiness_reason = phase_rows["Readiness"]
     risk_grade, risk_reason = phase_rows["Risk"]
     quality_grade, quality_reason = phase_rows["Quality"]
 
@@ -779,12 +780,24 @@ def _report_detail_sections(context) -> list[tuple[str, list[tuple[str, str]]]]:
     if structure_grade == "failed" and not context.validation.errors:
         structure_rows.append(("Issue", structure_reason))
 
+    readiness_rows = [("Status", readiness_grade)]
+    if readiness_grade == "failed":
+        readiness_rows.append(("Issue", readiness_reason))
+
     risk_rows = [
         ("Decision", context.security.decision or risk_grade),
         ("Safety score", _format_score(context.security.score)),
         ("LLM Guard status", _evaluation_status(context, "llm_guard_security")),
         ("Findings", str(len(context.security.findings))),
     ]
+    for index, finding in enumerate(context.security.findings, start=1):
+        severity = str(finding.get("severity", "unknown"))
+        check = str(finding.get("check", "security check"))
+        risk_rows.append((f"Finding {index}", f"{severity} · {check}"))
+        for label, key in (("Reason", "reason"), ("Location", "field"), ("Evidence", "evidence")):
+            value = finding.get(key)
+            if value:
+                risk_rows.append((f"{label} {index}", str(value)))
     if risk_reason != "No blocking risk found.":
         risk_rows.append(("Issue", risk_reason))
 
@@ -816,6 +829,7 @@ def _report_detail_sections(context) -> list[tuple[str, list[tuple[str, str]]]]:
 
     return [
         ("Structure Validation", structure_rows),
+        ("Publish Readiness", readiness_rows),
         ("Risk Validation", risk_rows),
         ("Quality Evaluation", quality_rows),
     ]
@@ -829,15 +843,30 @@ def _format_score(value: float | None) -> str:
 
 
 def _report_phase_rows(context) -> list[tuple[str, str, str]]:
-    """Return the three user-facing evaluation phases without pipeline internals."""
-    structure_gates = _phase_gates(context, {"discovery_gate", "identity_gate", "metadata_gate", "validation_gate"})
+    """Return the user-facing evaluation phases without pipeline internals."""
+    structure_gates = _phase_gates(context, {"discovery_gate", "validation_gate"})
+    readiness_gates = _phase_gates(context, {"identity_gate", "metadata_gate"})
     risk_gates = _phase_gates(context, {"security_gate"})
     quality_gates = _phase_gates(context, {"performance_exam_gate"})
 
     structure_issue = _first_gate_issue(structure_gates) or _first_item(context.validation.errors)
     structure_warning = _first_gate_warning(structure_gates) or _first_item(context.validation.warnings)
-    structure_grade = "failed" if structure_issue or not context.validation.passed else "passed"
-    structure_reason = structure_issue or structure_warning or "Structure checks passed."
+    validation_ran = context.validation.passed or any(
+        gate.gate_name == "validation_gate" for gate in structure_gates
+    )
+    structure_grade = "failed" if structure_issue else ("passed" if validation_ran else "not evaluated")
+    structure_reason = structure_issue or structure_warning or (
+        "Structure checks passed." if validation_ran else "No structure checks were run."
+    )
+
+    readiness_issue = _first_gate_issue(readiness_gates)
+    readiness_warning = _first_gate_warning(readiness_gates)
+    readiness_grade = "failed" if readiness_issue else ("passed" if readiness_gates else "not evaluated")
+    readiness_reason = readiness_issue or readiness_warning or (
+        "Publish readiness checks passed."
+        if readiness_gates
+        else "No publish readiness checks were run."
+    )
 
     risk_issue = _first_gate_issue(risk_gates) or _first_security_finding(context)
     risk_grade = context.security.decision or ("failed" if risk_issue else "not scored")
@@ -867,6 +896,7 @@ def _report_phase_rows(context) -> list[tuple[str, str, str]]:
 
     return [
         ("Structure", structure_grade, structure_reason),
+        ("Readiness", readiness_grade, readiness_reason),
         (
             "Risk",
             risk_grade,
@@ -1251,7 +1281,7 @@ def _publisher_cli_version() -> str:
 
 
 def _load_local_env_defaults() -> None:
-    """Load local env files without overriding shell-provided values."""
+    """Load local env files without overriding non-empty shell values."""
     for env_file in _candidate_env_files():
         _load_env_file(env_file)
 
@@ -1273,7 +1303,7 @@ def _load_env_file(path: Path) -> None:
 
     for line in path.read_text(encoding="utf-8").splitlines():
         key, value = _parse_env_line(line)
-        if key and key not in os.environ:
+        if key and not os.environ.get(key):
             os.environ[key] = value
 
 

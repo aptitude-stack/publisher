@@ -10,6 +10,7 @@ from publisher.app.cli import (
     BatchUploadResult,
     _build_parser,
     _batch_progress,
+    _load_env_file,
     _print_pipeline_report,
     _publisher_cli_version,
     _run_admin_batch_upload,
@@ -72,6 +73,22 @@ def test_menu_subcommand_is_not_registered() -> None:
 
     with pytest.raises(SystemExit):
         parser.parse_args(["menu"])
+
+
+def test_local_env_fills_empty_values_without_overriding_shell_values(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text("OPENAI_API_KEY=from-dotenv\n", encoding="utf-8")
+
+    monkeypatch.setenv("OPENAI_API_KEY", "")
+    _load_env_file(env_file)
+    assert os.environ["OPENAI_API_KEY"] == "from-dotenv"
+
+    monkeypatch.setenv("OPENAI_API_KEY", "from-shell")
+    _load_env_file(env_file)
+    assert os.environ["OPENAI_API_KEY"] == "from-shell"
 
 
 def test_pipeline_report_defaults_to_a_three_phase_summary(

@@ -276,11 +276,8 @@ class ValidationStage(PublisherStage):
     def _has_trigger_guidance(self, description: str) -> bool:
         """Heuristic check that the description includes use-when guidance."""
         lowered = description.lower()
-        action_markers = ("handles", "creates", "analyzes", "manages", "generates", "helps")
         trigger_markers = ("use when", "when user", "asks for", "mentions", "says")
-        return any(marker in lowered for marker in action_markers) and any(
-            marker in lowered for marker in trigger_markers
-        )
+        return any(marker in lowered for marker in trigger_markers)
 
     def _validate_body(self, context: PublishContext, *, body: str) -> None:
         """Validate the SKILL.md body against the recommended structure."""

@@ -622,7 +622,7 @@ def _render_pipeline_report(context: PublishContext) -> None:
     for index, (title, rows) in enumerate(sections):
         if index:
             _print_step_separator()
-        table = Table.grid(expand=True, padding=(0, 2))
+        table = Table.grid(padding=(0, 2))
         table.add_column(style=THEME.text_muted, no_wrap=True)
         table.add_column(style=THEME.text_body)
         for label, value in rows:
