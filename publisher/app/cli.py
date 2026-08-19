@@ -823,12 +823,25 @@ def _report_detail_sections(context) -> list[tuple[str, list[tuple[str, str]]]]:
         risk_rows.append(("Summary", risk_reason))
 
     quality_status = context.metadata.extra.get("upskill_evaluation")
+    quality_evidence = quality_status if isinstance(quality_status, dict) else {}
+    baseline_success = quality_evidence.get("baseline_success_rate")
+    skilled_success = quality_evidence.get("skilled_success_rate")
+    lift = quality_evidence.get("skill_lift")
+    token_delta = quality_evidence.get("token_delta")
+    if lift is None:
+        lift = context.performance_exam.skill_lift
+    if token_delta is None:
+        token_delta = context.performance_exam.token_delta
     quality_rows = [
         ("Upskill status", _evaluation_status(context, "upskill_evaluation")),
         ("Performance score", _format_score(context.performance_exam.score)),
-        ("Lift", str(context.performance_exam.skill_lift)),
-        ("Token delta", str(context.performance_exam.token_delta)),
+        ("Lift", _format_lift(lift)),
+        ("Token delta", str(token_delta)),
     ]
+    if baseline_success is not None:
+        quality_rows.append(("Baseline success", _format_percentage(baseline_success)))
+    if skilled_success is not None:
+        quality_rows.append(("Skilled success", _format_percentage(skilled_success)))
     if isinstance(quality_status, dict):
         reason = quality_status.get("reason")
         if reason:
@@ -875,6 +888,18 @@ def _format_score(value: float | None) -> str:
     if value is None:
         return "not scored"
     return f"{value * 10:.1f} / 10.0"
+
+
+def _format_percentage(value: float) -> str:
+    """Render an Upskill success rate as a whole percentage."""
+    return f"{value:.0%}"
+
+
+def _format_lift(value: float | None) -> str:
+    """Render Upskill lift as percentage points rather than a raw fraction."""
+    if value is None:
+        return "None"
+    return f"{value * 100:+.0f}pp"
 
 
 def _report_phase_rows(context) -> list[tuple[str, str, str]]:

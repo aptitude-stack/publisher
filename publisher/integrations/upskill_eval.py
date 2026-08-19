@@ -128,6 +128,9 @@ def run_upskill_evaluation(*, skill_root: Path, artifacts_dir: Path) -> UpskillE
     (upskill_dir / "stderr.txt").write_text(completed.stderr, encoding="utf-8")
     payloads = _load_payloads(upskill_dir)
     payloads.extend(_payloads_from_text(completed.stdout))
+    duplicate_generated_verifiers = tests_path is None and _has_duplicate_exact_text_verifiers(
+        payloads
+    )
     unusable_generated_suite = tests_path is None and _looks_like_unusable_generated_suite(payloads)
     parsed = _normalize_payloads(payloads)
 
@@ -141,13 +144,19 @@ def run_upskill_evaluation(*, skill_root: Path, artifacts_dir: Path) -> UpskillE
             "or returned no usable responses"
         )
         parsed = {}
-    elif status == "scored" and unusable_generated_suite:
+    elif status == "scored" and (duplicate_generated_verifiers or unusable_generated_suite):
         status = "inconclusive"
-        reason = "upskill generated tests produced unusable comparative evidence"
-        validation_errors = [
-            "generated exact-text verifiers passed no assertions despite non-empty model outputs"
-        ]
-        parsed = {}
+        if duplicate_generated_verifiers:
+            reason = "upskill generated duplicate exact-text verifiers"
+            validation_errors = ["generated exact-text verifiers duplicate expected checks"]
+        else:
+            reason = "upskill generated tests produced unusable comparative evidence"
+            validation_errors = [
+                "generated exact-text verifiers passed no assertions despite non-empty model outputs"
+            ]
+        parsed["score"] = None
+        parsed["passed"] = None
+        parsed["recommendations"] = []
     elif status == "scored":
         validation_errors = _missing_upskill_metrics_errors(parsed)
         if validation_errors:
@@ -220,6 +229,31 @@ def _looks_like_unusable_generated_suite(payloads: list[Any]) -> bool:
             skilled
         ):
             return True
+    return False
+
+
+def _has_duplicate_exact_text_verifiers(payloads: list[Any]) -> bool:
+    """Detect generated test cases that enforce the same exact text twice."""
+    for payload in payloads:
+        if not isinstance(payload, dict) or not isinstance(payload.get("test_case"), dict):
+            continue
+        test_case = payload["test_case"]
+        expected = test_case.get("expected")
+        verifiers = test_case.get("verifiers")
+        if not isinstance(expected, dict) or not isinstance(verifiers, list):
+            continue
+        expected_values = expected.get("contains")
+        if not isinstance(expected_values, list):
+            continue
+        normalized_expected = [str(value).strip().casefold() for value in expected_values]
+        for verifier in verifiers:
+            if not isinstance(verifier, dict) or verifier.get("type") != "contains":
+                continue
+            values = verifier.get("values")
+            if not isinstance(values, list):
+                continue
+            if [str(value).strip().casefold() for value in values] == normalized_expected:
+                return True
     return False
 
 

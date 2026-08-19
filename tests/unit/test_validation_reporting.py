@@ -120,7 +120,11 @@ def test_inconclusive_upskill_is_reported_for_review() -> None:
     context = PublishContext(source=SkillSource(file_path="skills/example"))
     context.metadata.extra["upskill_evaluation"] = {
         "status": "inconclusive",
-        "reason": "upskill generated tests produced unusable comparative evidence",
+        "reason": "upskill generated duplicate exact-text verifiers",
+        "baseline_success_rate": 0.0,
+        "skilled_success_rate": 0.25,
+        "skill_lift": 0.25,
+        "token_delta": 1011,
     }
 
     quality = dict(dict(_report_detail_sections(context))["Quality Evaluation"])
@@ -128,6 +132,10 @@ def test_inconclusive_upskill_is_reported_for_review() -> None:
 
     assert quality["Summary"] == (
         "Performance score not scored. "
-        "upskill generated tests produced unusable comparative evidence"
+        "upskill generated duplicate exact-text verifiers"
     )
+    assert quality["Baseline success"] == "0%"
+    assert quality["Skilled success"] == "25%"
+    assert quality["Lift"] == "+25pp"
+    assert quality["Token delta"] == "1011"
     assert phases["Quality"][0] == "review_required"

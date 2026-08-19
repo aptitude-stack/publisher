@@ -494,16 +494,30 @@ def test_upskill_generated_zero_zero_suite_is_inconclusive(tmp_path, monkeypatch
                         {
                             "run_type": "baseline",
                             "assertions_passed": 0,
-                            "assertions_total": 10,
-                            "stats": {"total_tokens": 2308, "output_tokens": 1574},
+                            "assertions_total": 8,
+                            "stats": {"total_tokens": 1698, "output_tokens": 970},
                         },
                         {
                             "run_type": "with_skill",
-                            "assertions_passed": 0,
-                            "assertions_total": 10,
-                            "stats": {"total_tokens": 8755, "output_tokens": 1042},
+                            "assertions_passed": 2,
+                            "assertions_total": 8,
+                            "stats": {"total_tokens": 9781, "output_tokens": 1505},
                         },
                     ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        test_result_path = runs_dir / "2026_08_20_01_33" / "eval" / "with-skill" / "test_1"
+        test_result_path.mkdir(parents=True)
+        (test_result_path / "test_result.json").write_text(
+            json.dumps(
+                {
+                    "test_case": {
+                        "input": "Create an implementation plan.",
+                        "expected": {"contains": ["design phase"]},
+                        "verifiers": [{"type": "contains", "values": ["design phase"]}],
+                    }
                 }
             ),
             encoding="utf-8",
@@ -522,11 +536,15 @@ def test_upskill_generated_zero_zero_suite_is_inconclusive(tmp_path, monkeypatch
 
     assert evaluation.status == "inconclusive"
     assert evaluation.score is None
-    assert evaluation.reason == "upskill generated tests produced unusable comparative evidence"
+    assert evaluation.reason == "upskill generated duplicate exact-text verifiers"
     assert evaluation.validation_errors == [
-        "generated exact-text verifiers passed no assertions despite non-empty model outputs"
+        "generated exact-text verifiers duplicate expected checks"
     ]
     assert evaluation.recommendations == []
+    assert evaluation.baseline_success_rate == 0.0
+    assert evaluation.skilled_success_rate == 0.25
+    assert evaluation.skill_lift == 0.25
+    assert evaluation.token_delta == 1011
 
     context = PublisherPipeline().create_context(file_path=str(tmp_path))
     context.validation.passed = True
