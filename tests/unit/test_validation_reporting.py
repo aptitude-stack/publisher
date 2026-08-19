@@ -114,3 +114,20 @@ def test_quality_labels_upskill_verdict_as_summary_and_keeps_actionable_suggesti
     assert quality["Summary"] == "skill may not be beneficial"
     assert quality["Suggestion 1"] == "add a troubleshooting example"
     assert "Suggestion 2" not in quality
+
+
+def test_inconclusive_upskill_is_reported_for_review() -> None:
+    context = PublishContext(source=SkillSource(file_path="skills/example"))
+    context.metadata.extra["upskill_evaluation"] = {
+        "status": "inconclusive",
+        "reason": "upskill generated tests produced unusable comparative evidence",
+    }
+
+    quality = dict(dict(_report_detail_sections(context))["Quality Evaluation"])
+    phases = {phase: (grade, reason) for phase, grade, reason in _report_phase_rows(context)}
+
+    assert quality["Summary"] == (
+        "Performance score not scored. "
+        "upskill generated tests produced unusable comparative evidence"
+    )
+    assert phases["Quality"][0] == "review_required"

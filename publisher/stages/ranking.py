@@ -172,6 +172,8 @@ class RankingStage(PublisherStage):
 
         if context.security.decision == "block":
             decision = "block"
+        elif upskill_status == "inconclusive":
+            decision = "review_required"
         elif upskill_status != "scored" or context.performance_exam.score is None:
             decision = "block"
         elif not context.validation.passed or context.security.decision == "review_required":

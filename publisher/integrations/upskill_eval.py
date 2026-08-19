@@ -142,7 +142,7 @@ def run_upskill_evaluation(*, skill_root: Path, artifacts_dir: Path) -> UpskillE
         )
         parsed = {}
     elif status == "scored" and unusable_generated_suite:
-        status = "failed"
+        status = "inconclusive"
         reason = "upskill generated tests produced unusable comparative evidence"
         validation_errors = [
             "generated exact-text verifiers passed no assertions despite non-empty model outputs"

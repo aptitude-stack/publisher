@@ -16,8 +16,13 @@ class PerformanceExamGate(PublisherGate):
         evidence = context.metadata.extra.get("upskill_evaluation", {})
         status = evidence.get("status") if isinstance(evidence, dict) else None
         blocking_issues: list[str] = []
+        warnings: list[str] = []
 
-        if status != "scored":
+        if status == "inconclusive":
+            warnings.append(
+                "Upskill generated verifier evidence was inconclusive; manual review is required."
+            )
+        elif status != "scored":
             blocking_issues.append(
                 "Upskill evaluation did not produce scored performance evidence."
             )
@@ -28,7 +33,11 @@ class PerformanceExamGate(PublisherGate):
         elif not context.performance_exam.models_tested:
             blocking_issues.append("Upskill evaluation did not record a model.")
 
-        if isinstance(evidence, dict) and evidence.get("validation_errors"):
+        if (
+            status != "inconclusive"
+            and isinstance(evidence, dict)
+            and evidence.get("validation_errors")
+        ):
             blocking_issues.append("Upskill evaluation recorded provider or validation errors.")
 
         passed = not blocking_issues
@@ -36,13 +45,14 @@ class PerformanceExamGate(PublisherGate):
             passed=passed,
             passed_message="Upskill passed: complete scored performance evidence is available.",
             blocking_issues=blocking_issues,
-            warnings=[],
+            warnings=warnings,
         )
         context.add_gate_result(
             gate_name=self.name,
             passed=passed,
             explanation=explanation,
             blocking_issues=blocking_issues,
+            warnings=warnings,
             data={"stage_name": self.stage_name, "status": status},
         )
         context.add_snapshot(

@@ -851,7 +851,9 @@ def _report_detail_sections(context) -> list[tuple[str, list[tuple[str, str]]]]:
             (f"Suggestion {index}", suggestion)
             for index, suggestion in enumerate(suggestions, start=1)
         )
-    if quality_grade == "failed" and not any(label == "Summary" for label, _ in quality_rows):
+    if quality_grade in {"failed", "review_required"} and not any(
+        label == "Summary" for label, _ in quality_rows
+    ):
         quality_rows.append(("Summary", quality_reason))
 
     final_score_rows = [
@@ -899,10 +901,19 @@ def _report_phase_rows(context) -> list[tuple[str, str, str]]:
     risk_reason = risk_issue or "No blocking risk found."
 
     quality_status = context.metadata.extra.get("upskill_evaluation", {})
+    quality_inconclusive = (
+        isinstance(quality_status, dict) and quality_status.get("status") == "inconclusive"
+    )
     quality_failed = (
         isinstance(quality_status, dict) and quality_status.get("status") == "failed"
     ) or bool(_first_gate_issue(quality_gates))
-    quality_grade = "failed" if quality_failed else (context.ranking.label or "not evaluated")
+    quality_grade = (
+        "failed"
+        if quality_failed
+        else "review_required"
+        if quality_inconclusive
+        else (context.ranking.label or "not evaluated")
+    )
     quality_reason = (
         str(quality_status.get("reason"))
         if isinstance(quality_status, dict) and quality_status.get("reason")

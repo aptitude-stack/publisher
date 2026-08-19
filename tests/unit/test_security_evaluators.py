@@ -15,6 +15,7 @@ import publisher.stages.performance_exam as performance_stage
 import publisher.stages.security as security_stage
 from publisher.gates.performance_exam import PerformanceExamGate
 from publisher.stages.security import SecurityStage
+from publisher.stages.ranking import RankingStage
 
 
 def test_security_stage_marks_llm_guard_unavailable_when_missing(tmp_path, monkeypatch) -> None:
@@ -476,7 +477,7 @@ def test_upskill_missing_token_usage_is_unscored(tmp_path, monkeypatch) -> None:
     assert any("did not report token usage" in error for error in evaluation.validation_errors)
 
 
-def test_upskill_generated_zero_zero_suite_is_unscored(tmp_path, monkeypatch) -> None:
+def test_upskill_generated_zero_zero_suite_is_inconclusive(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
     monkeypatch.delenv("UPSKILL_TESTS_PATH", raising=False)
     monkeypatch.delenv("PUBLISHER_UPSKILL_COMMAND", raising=False)
@@ -519,13 +520,31 @@ def test_upskill_generated_zero_zero_suite_is_unscored(tmp_path, monkeypatch) ->
 
     evaluation = run_upskill_evaluation(skill_root=tmp_path, artifacts_dir=tmp_path / "artifacts")
 
-    assert evaluation.status == "failed"
+    assert evaluation.status == "inconclusive"
     assert evaluation.score is None
     assert evaluation.reason == "upskill generated tests produced unusable comparative evidence"
     assert evaluation.validation_errors == [
         "generated exact-text verifiers passed no assertions despite non-empty model outputs"
     ]
     assert evaluation.recommendations == []
+
+    context = PublisherPipeline().create_context(file_path=str(tmp_path))
+    context.validation.passed = True
+    context.security.score = 1.0
+    context.security.decision = "allow"
+    context.metadata.extra["upskill_evaluation"] = {
+        "status": evaluation.status,
+        "validation_errors": evaluation.validation_errors,
+    }
+
+    assert PerformanceExamGate().verify(context) is True
+    assert context.gate_history[-1].warnings == [
+        "Upskill generated verifier evidence was inconclusive; manual review is required."
+    ]
+
+    RankingStage().run(context)
+
+    assert context.ranking.publish_decision == "review_required"
 
 
 def test_openai_key_does_not_enable_semantic_validation(monkeypatch) -> None:
