@@ -1,0 +1,87 @@
+{
+  "test_case": {
+    "input": "Generate a checklist for planning a birthday party",
+    "context": null,
+    "expected": {
+      "contains": [
+        "set date",
+        "choose venue",
+        "send invitations",
+        "plan menu",
+        "arrange decorations",
+        "order cake"
+      ]
+    },
+    "verifiers": [
+      {
+        "type": "contains",
+        "name": null,
+        "values": [
+          "set date",
+          "choose venue",
+          "send invitations",
+          "plan menu",
+          "arrange decorations",
+          "order cake"
+        ],
+        "path": null,
+        "text": null,
+        "cmd": null,
+        "config": null
+      }
+    ],
+    "output_file": null,
+    "validator": null,
+    "validator_config": null
+  },
+  "success": false,
+  "output": "I hit an internal error while calling the model: openai request failed for model 'gpt-4o-mini' (code: model_not_found) (status=403): Error code: 403 - {'error': {'message': 'Project `proj_vlDWbwt4YqYdrMK7dRiy0pIj` does not have access to model `gpt-4o-mini`', 'type': 'invalid_request_error', 'param': None, 'code': 'model_not... See fast-agent-error for additional details.",
+  "tokens_used": 0,
+  "turns": 1,
+  "error": null,
+  "stats": {
+    "conversation_span_ms": 12558.64,
+    "llm_time_ms": 12558.64,
+    "tool_time_ms": 0.0,
+    "turns": 1,
+    "tool_calls": 0,
+    "tool_errors": 0,
+    "mcp_calls": 0,
+    "execute_calls": 0,
+    "tool_call_map": {},
+    "tool_error_map": {},
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "total_tokens": 0,
+    "usage_summaries": [],
+    "timing_summaries": [
+      {
+        "start_time": 58508.805853041,
+        "end_time": 58521.364490916,
+        "duration_ms": 12558.64
+      }
+    ]
+  },
+  "validation_result": {
+    "passed": false,
+    "assertions_passed": 0,
+    "assertions_total": 2,
+    "metrics_count": 0,
+    "benchmarks_found": [],
+    "error_message": "missing required output text: set date; missing required output text: set date",
+    "details": [
+      "missing: set date",
+      "missing: choose venue",
+      "missing: send invitations",
+      "missing: plan menu",
+      "missing: arrange decorations",
+      "missing: order cake",
+      "missing: set date",
+      "missing: choose venue",
+      "missing: send invitations",
+      "missing: plan menu",
+      "missing: arrange decorations",
+      "missing: order cake"
+    ]
+  }
+}

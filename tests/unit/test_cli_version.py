@@ -317,7 +317,6 @@ def test_admin_batch_upload_uses_fast_scan_environment_by_default(
         captured["threshold"] = os.environ.get(
             "PUBLISHER_LLM_GUARD_PROMPT_INJECTION_THRESHOLD"
         )
-        captured["max_chars"] = os.environ.get("PUBLISHER_LLM_GUARD_MAX_TEXT_CHARS")
         captured["default_tests"] = os.environ.get("UPSKILL_USE_DEFAULT_TESTS")
         captured["timeout"] = os.environ.get("PUBLISHER_UPSKILL_TIMEOUT_SECONDS")
         return BatchUploadResult(
@@ -334,7 +333,6 @@ def test_admin_batch_upload_uses_fast_scan_environment_by_default(
     assert _run_admin_batch_upload(args) == 0
     assert captured == {
         "threshold": "0.90",
-        "max_chars": "40000",
         "default_tests": "true",
         "timeout": "120",
     }

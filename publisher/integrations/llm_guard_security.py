@@ -15,7 +15,6 @@ from publisher.integrations.external_tools import configured_bool
 
 
 _DEFAULT_ENABLED = True
-_DEFAULT_MAX_TEXT_CHARS = 120_000
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,7 +69,7 @@ def run_llm_guard_security_scan(
     scanned_fields = 0
 
     for field_name, raw_text in field_values.items():
-        text = _bounded_text(raw_text)
+        text = raw_text
         if not text.strip():
             continue
         scanned_fields += 1
@@ -206,13 +205,6 @@ def _float_env(name: str, default: float) -> float:
         return float(value)
     except ValueError:
         return default
-
-
-def _bounded_text(text: str) -> str:
-    max_chars = int(os.environ.get("PUBLISHER_LLM_GUARD_MAX_TEXT_CHARS", _DEFAULT_MAX_TEXT_CHARS))
-    if len(text) <= max_chars:
-        return text
-    return text[:max_chars]
 
 
 def _scanner_names(scanners: list[object]) -> list[str]:

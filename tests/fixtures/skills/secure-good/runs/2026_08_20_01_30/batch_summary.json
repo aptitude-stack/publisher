@@ -1,0 +1,129 @@
+{
+  "batch_id": "2026_08_20_01_30",
+  "model": "gpt-4o-mini",
+  "task": "Helps create a clear, actionable checklist from a short request; use when planning a small task.",
+  "total_runs": 2,
+  "passed_runs": 0,
+  "results": [
+    {
+      "metadata": {
+        "model": "gpt-4o-mini",
+        "task": "Helps create a clear, actionable checklist from a short request; use when planning a small task.",
+        "batch_id": "2026_08_20_01_30",
+        "run_number": 1,
+        "timestamp": "2026-08-20T01:31:05.695872"
+      },
+      "stats": {
+        "conversation_span_ms": 62794.79,
+        "llm_time_ms": 62794.79,
+        "tool_time_ms": 0.0,
+        "turns": 5,
+        "tool_calls": 0,
+        "tool_errors": 0,
+        "mcp_calls": 0,
+        "execute_calls": 0,
+        "tool_call_map": {},
+        "tool_error_map": {},
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "usage_summaries": [],
+        "timing_summaries": [
+          {
+            "start_time": 58508.805945666,
+            "end_time": 58521.365386666,
+            "duration_ms": 12559.44
+          },
+          {
+            "start_time": 58508.805853041,
+            "end_time": 58521.364490916,
+            "duration_ms": 12558.64
+          },
+          {
+            "start_time": 58508.806525875,
+            "end_time": 58521.36531375,
+            "duration_ms": 12558.79
+          },
+          {
+            "start_time": 58508.806128666,
+            "end_time": 58521.364505083,
+            "duration_ms": 12558.38
+          },
+          {
+            "start_time": 58508.805860875,
+            "end_time": 58521.365396875,
+            "duration_ms": 12559.54
+          }
+        ]
+      },
+      "passed": false,
+      "assertions_passed": 0,
+      "assertions_total": 10,
+      "error_message": null,
+      "session_id": null,
+      "session_history_file": null,
+      "run_type": "baseline",
+      "skill_name": "secure-good"
+    },
+    {
+      "metadata": {
+        "model": "gpt-4o-mini",
+        "task": "Helps create a clear, actionable checklist from a short request; use when planning a small task.",
+        "batch_id": "2026_08_20_01_30",
+        "run_number": 2,
+        "timestamp": "2026-08-20T01:31:05.696618"
+      },
+      "stats": {
+        "conversation_span_ms": 57732.49,
+        "llm_time_ms": 57732.49,
+        "tool_time_ms": 0.0,
+        "turns": 5,
+        "tool_calls": 0,
+        "tool_errors": 0,
+        "mcp_calls": 0,
+        "execute_calls": 0,
+        "tool_call_map": {},
+        "tool_error_map": {},
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "usage_summaries": [],
+        "timing_summaries": [
+          {
+            "start_time": 58492.418047416,
+            "end_time": 58505.234092833,
+            "duration_ms": 12816.05
+          },
+          {
+            "start_time": 58492.418188666,
+            "end_time": 58503.643372791,
+            "duration_ms": 11225.18
+          },
+          {
+            "start_time": 58492.417861833,
+            "end_time": 58503.651980916,
+            "duration_ms": 11234.12
+          },
+          {
+            "start_time": 58492.41975925,
+            "end_time": 58503.651542,
+            "duration_ms": 11231.78
+          },
+          {
+            "start_time": 58492.418001125,
+            "end_time": 58503.643366041,
+            "duration_ms": 11225.36
+          }
+        ]
+      },
+      "passed": false,
+      "assertions_passed": 0,
+      "assertions_total": 10,
+      "error_message": null,
+      "session_id": null,
+      "session_history_file": null,
+      "run_type": "with_skill",
+      "skill_name": "secure-good"
+    }
+  ]
+}

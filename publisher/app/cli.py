@@ -645,14 +645,12 @@ def _scan_profile_environment(profile: ScanProfile, *, upskill_verbose: bool = F
     if profile == "fast":
         overrides = {
             "PUBLISHER_LLM_GUARD_PROMPT_INJECTION_THRESHOLD": "0.90",
-            "PUBLISHER_LLM_GUARD_MAX_TEXT_CHARS": "40000",
             "UPSKILL_USE_DEFAULT_TESTS": "true",
             "PUBLISHER_UPSKILL_TIMEOUT_SECONDS": "120",
         }
     else:
         overrides = {
             "PUBLISHER_LLM_GUARD_PROMPT_INJECTION_THRESHOLD": "0.85",
-            "PUBLISHER_LLM_GUARD_MAX_TEXT_CHARS": "120000",
             "UPSKILL_USE_DEFAULT_TESTS": "false",
             "PUBLISHER_UPSKILL_TIMEOUT_SECONDS": "600",
         }

@@ -1,0 +1,13 @@
+
+▲ Provider Error: Error code: 403 - {'error': {'message': 'Project 
+`proj_vlDWbwt4YqYdrMK7dRiy0pIj` does not have access to model `gpt-4o-mini`', 
+'type': 'invalid_request_error', 'param': None, 'code': 'model_not_found'}}...
+⟳ Retrying in 10.0s... (Attempt 1/1)
+
+Loaded 1 messages from prompt file '/Users/yonatan/Dev/Aptitude/publisher/tests/fixtures/skills/secure-good/runs/2026_08_20_01_30/eval/baseline/test_5/prompt.txt'
+Use '/' for commands, '!' for shell. '#' to query, '@' to switch agents
+CTRL+T multiline, CTRL+Y copy last message, CTRL+E external editor.
+CTRL+Space or Tab for path completion. '^' for resource attach.
+
+
+Input error: OSError: [Errno 22] Invalid argument

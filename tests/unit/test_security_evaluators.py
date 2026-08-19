@@ -409,6 +409,32 @@ def test_llm_guard_missing_scanner_result_fails_closed(tmp_path, monkeypatch) ->
     assert "missing scanner results" in str(result.reason)
 
 
+def test_llm_guard_scans_full_text_without_a_character_limit(tmp_path, monkeypatch) -> None:
+    class Scanner:
+        pass
+
+    scanned_texts: list[str] = []
+
+    def fake_scan(_scanners, text):
+        scanned_texts.append(text)
+        return text, {"Scanner": True}, {"Scanner": 1.0}
+
+    monkeypatch.setenv("PUBLISHER_LLM_GUARD_MAX_TEXT_CHARS", "1")
+    monkeypatch.setattr(
+        "publisher.integrations.llm_guard_security._load_llm_guard",
+        lambda: (fake_scan, [Scanner()]),
+    )
+
+    result = run_llm_guard_security_scan(
+        skill_root=tmp_path,
+        artifacts_dir=tmp_path / "artifacts",
+        field_values={"content.raw_markdown": "full skill document"},
+    )
+
+    assert result.status == "scored"
+    assert scanned_texts == ["full skill document"]
+
+
 def test_llm_guard_scan_exception_fails_closed(tmp_path, monkeypatch) -> None:
     class Scanner:
         pass
@@ -448,6 +474,58 @@ def test_upskill_missing_token_usage_is_unscored(tmp_path, monkeypatch) -> None:
 
     assert evaluation.status == "failed"
     assert any("did not report token usage" in error for error in evaluation.validation_errors)
+
+
+def test_upskill_generated_zero_zero_suite_is_unscored(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
+    monkeypatch.delenv("UPSKILL_TESTS_PATH", raising=False)
+    monkeypatch.delenv("PUBLISHER_UPSKILL_COMMAND", raising=False)
+
+    def fake_run(command, **kwargs):
+        runs_dir = Path(command[command.index("--runs-dir") + 1])
+        summary_path = runs_dir / "2026_08_20_01_33" / "batch_summary.json"
+        summary_path.parent.mkdir(parents=True)
+        summary_path.write_text(
+            json.dumps(
+                {
+                    "model": "openai.gpt-4.1-mini",
+                    "results": [
+                        {
+                            "run_type": "baseline",
+                            "assertions_passed": 0,
+                            "assertions_total": 10,
+                            "stats": {"total_tokens": 2308, "output_tokens": 1574},
+                        },
+                        {
+                            "run_type": "with_skill",
+                            "assertions_passed": 0,
+                            "assertions_total": 10,
+                            "stats": {"total_tokens": 8755, "output_tokens": 1042},
+                        },
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            "Recommendation: skill may not be beneficial\n",
+            "",
+        )
+
+    monkeypatch.setattr(upskill_eval, "resolve_executable", lambda *args, **kwargs: "upskill")
+    monkeypatch.setattr(upskill_eval, "run_command", fake_run)
+
+    evaluation = run_upskill_evaluation(skill_root=tmp_path, artifacts_dir=tmp_path / "artifacts")
+
+    assert evaluation.status == "failed"
+    assert evaluation.score is None
+    assert evaluation.reason == "upskill generated tests produced unusable comparative evidence"
+    assert evaluation.validation_errors == [
+        "generated exact-text verifiers passed no assertions despite non-empty model outputs"
+    ]
+    assert evaluation.recommendations == []
 
 
 def test_openai_key_does_not_enable_semantic_validation(monkeypatch) -> None:

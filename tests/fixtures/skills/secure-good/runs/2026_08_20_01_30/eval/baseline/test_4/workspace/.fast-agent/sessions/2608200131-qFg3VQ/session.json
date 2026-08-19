@@ -1,0 +1,15 @@
+{
+  "name": "2608200131-qFg3VQ",
+  "created_at": "2026-08-20T01:31:04.593408",
+  "last_activity": "2026-08-20T01:31:04.595299",
+  "history_files": [
+    "history_evaluator.json"
+  ],
+  "metadata": {
+    "agent_name": "evaluator",
+    "last_history_by_agent": {
+      "evaluator": "history_evaluator.json"
+    },
+    "first_user_preview": "Make a checklist for cleaning a house in one day"
+  }
+}

@@ -128,6 +128,7 @@ def run_upskill_evaluation(*, skill_root: Path, artifacts_dir: Path) -> UpskillE
     (upskill_dir / "stderr.txt").write_text(completed.stderr, encoding="utf-8")
     payloads = _load_payloads(upskill_dir)
     payloads.extend(_payloads_from_text(completed.stdout))
+    unusable_generated_suite = tests_path is None and _looks_like_unusable_generated_suite(payloads)
     parsed = _normalize_payloads(payloads)
 
     status = "scored" if completed.returncode == 0 else "failed"
@@ -139,6 +140,13 @@ def run_upskill_evaluation(*, skill_root: Path, artifacts_dir: Path) -> UpskillE
             "upskill produced zero-token failing results; provider calls likely failed "
             "or returned no usable responses"
         )
+        parsed = {}
+    elif status == "scored" and unusable_generated_suite:
+        status = "failed"
+        reason = "upskill generated tests produced unusable comparative evidence"
+        validation_errors = [
+            "generated exact-text verifiers passed no assertions despite non-empty model outputs"
+        ]
         parsed = {}
     elif status == "scored":
         validation_errors = _missing_upskill_metrics_errors(parsed)
@@ -182,6 +190,37 @@ def _looks_like_empty_provider_result(parsed: dict[str, Any]) -> bool:
         and baseline_success == 0.0
         and skilled_success == 0.0
     )
+
+
+def _looks_like_unusable_generated_suite(payloads: list[Any]) -> bool:
+    """Reject generated suites that cannot award either evaluated run any credit."""
+    for payload in payloads:
+        if not isinstance(payload, dict) or not isinstance(payload.get("results"), list):
+            continue
+        results = {
+            result.get("run_type"): result
+            for result in payload["results"]
+            if isinstance(result, dict)
+        }
+        baseline = results.get("baseline")
+        skilled = results.get("with_skill")
+        if not isinstance(baseline, dict) or not isinstance(skilled, dict):
+            continue
+
+        def produced_output_but_passed_nothing(result: dict[str, Any]) -> bool:
+            stats = result.get("stats")
+            return (
+                _coerce_int(result.get("assertions_passed")) == 0
+                and (_coerce_int(result.get("assertions_total")) or 0) > 0
+                and isinstance(stats, dict)
+                and (_coerce_int(stats.get("output_tokens")) or 0) > 0
+            )
+
+        if produced_output_but_passed_nothing(baseline) and produced_output_but_passed_nothing(
+            skilled
+        ):
+            return True
+    return False
 
 
 def _reset_artifact_dir(path: Path) -> None:
