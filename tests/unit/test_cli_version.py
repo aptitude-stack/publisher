@@ -83,12 +83,20 @@ def test_pipeline_report_defaults_to_a_three_phase_summary(
     context.security.score = 1.0
     context.security.decision = "allow"
     context.metadata.maturity_score = 0.4
-    context.metadata.extra["upskill_evaluation"] = {"status": "failed"}
+    context.metadata.extra["upskill_evaluation"] = {
+        "status": "failed",
+        "reason": "upskill exited with status 1",
+    }
     context.ranking.label = "review"
     context.ranking.publish_decision = "allow"
     context.add_gate_result(gate_name="discovery_gate", passed=True)
     context.add_gate_result(gate_name="security_gate", passed=True)
     context.add_gate_result(gate_name="validation_gate", passed=True)
+    context.add_gate_result(
+        gate_name="performance_exam_gate",
+        passed=False,
+        blocking_issues=["Upskill evaluation did not produce scored performance evidence."],
+    )
 
     _print_pipeline_report(context)
 
@@ -97,6 +105,8 @@ def test_pipeline_report_defaults_to_a_three_phase_summary(
     assert "Structure" in output
     assert "Risk" in output
     assert "Quality" in output
+    assert "upskill exited with status 1" in output
+    assert "Upskill evaluation did not produce scored performance evidence." not in output
     assert "Stages" not in output
     assert "Gate Results" not in output
     assert "Security score" not in output
@@ -110,7 +120,14 @@ def test_pipeline_report_verbose_keeps_only_phase_summaries(
     context.validation.passed = True
     context.security.score = 1.0
     context.security.decision = "allow"
+    context.performance_exam.score = 0.7
+    context.metadata.maturity_score = 0.8
+    context.ranking.total_score = 0.75
     context.ranking.label = "review"
+    context.metadata.extra["upskill_evaluation"] = {
+        "status": "failed",
+        "reason": "upskill exited with status 1",
+    }
     context.add_gate_result(gate_name="discovery_gate", passed=True)
     context.add_gate_result(gate_name="security_gate", passed=True)
     context.add_gate_result(gate_name="validation_gate", passed=True)
@@ -124,6 +141,15 @@ def test_pipeline_report_verbose_keeps_only_phase_summaries(
     assert "Quality Evaluation" in output
     assert "LLM Guard status" in output
     assert "Upskill status" in output
+    assert "Safety score" in output
+    assert "Performance score" in output
+    assert "Maturity score" in output
+    assert "Overall score" in output
+    assert "10.0 / 10" in output
+    assert "8.0 / 10" in output
+    assert "7.5 / 10" in output
+    assert "Reason" in output
+    assert "upskill exited with status 1" in output
     assert "Stages" not in output
     assert "Gate Results" not in output
 
@@ -131,9 +157,17 @@ def test_pipeline_report_verbose_keeps_only_phase_summaries(
 def test_inspect_parser_supports_verbose_phase_summaries() -> None:
     parser = _build_parser()
 
-    args = parser.parse_args(["inspect", "skills/example", "--verbose"])
+    args = parser.parse_args(["inspect", "skills/example"])
 
     assert args.verbose is True
+
+
+def test_inspect_parser_can_disable_verbose_phase_summaries() -> None:
+    parser = _build_parser()
+
+    args = parser.parse_args(["inspect", "skills/example", "--no-verbose"])
+
+    assert args.verbose is False
 
 
 def test_pipeline_report_summarizes_the_first_security_finding(

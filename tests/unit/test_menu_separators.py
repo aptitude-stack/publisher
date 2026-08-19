@@ -22,22 +22,43 @@ def test_render_step_separator_uses_stream_safe_glyphs() -> None:
     assert menu._render_step_separator(0, _AsciiStream()) == "-"
 
 
-def test_interactive_pipeline_report_shows_only_three_evaluation_phases(monkeypatch) -> None:
-    """The wizard must not reintroduce the detailed report by default."""
+def test_interactive_pipeline_report_is_verbose_by_default(monkeypatch) -> None:
     output = StringIO()
     monkeypatch.setattr(menu, "CONSOLE", Console(file=output, width=120))
     context = PublishContext(source=SkillSource(file_path="skills/example"))
     context.validation.passed = True
+    context.validation.warnings = ["First warning", "Second warning"]
     context.security.score = 1.0
     context.security.decision = "allow"
+    context.performance_exam.score = 0.7
+    context.metadata.maturity_score = 0.8
+    context.ranking.total_score = 0.75
     context.ranking.label = "review"
+    context.metadata.extra["upskill_evaluation"] = {
+        "status": "failed",
+        "reason": "upskill exited with status 1",
+        "recommendations": ["Add a concrete troubleshooting example."],
+    }
 
     menu._render_pipeline_report(context)
 
     rendered = output.getvalue()
-    assert "Structure" in rendered
-    assert "Risk" in rendered
-    assert "Quality" in rendered
+    assert "Structure Validation" in rendered
+    assert "Risk Validation" in rendered
+    assert "Quality Evaluation" in rendered
+    assert "Upskill status" in rendered
+    assert "Safety score" in rendered
+    assert "10.0 / 10" in rendered
+    assert "Performance score" in rendered
+    assert "7.0 / 10" in rendered
+    assert "Warning 1" in rendered
+    assert "First warning" in rendered
+    assert "Warning 2" in rendered
+    assert "Second warning" in rendered
+    assert "Reason" in rendered
+    assert "upskill exited with status 1" in rendered
+    assert "Suggestion 1" in rendered
+    assert "Add a concrete troubleshooting example." in rendered
     assert "Stages" not in rendered
     assert "Gate Results" not in rendered
     assert "Skill Identity" not in rendered

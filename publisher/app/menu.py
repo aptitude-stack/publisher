@@ -28,8 +28,8 @@ from publisher.app.cli import (
     _missing_publish_token_message,
     _preflight_identity_from_skill_path,
     _publisher_cli_version,
+    _report_detail_sections,
     _registry_result_lines,
-    _report_phase_rows,
     _relationship_alert_lines,
     _relationship_check_token,
     _run_admin_batch_upload,
@@ -262,7 +262,7 @@ def _frame(
 
     return Panel(
         renderable,
-        title=title,
+        title=Text(title, style=THEME.text_primary),
         subtitle=subtitle,
         border_style=border_style or THEME.border_secondary,
         box=_panel_box_for_stream(sys.stdout),
@@ -611,19 +611,16 @@ def _render_plan(plan: PublishPlan) -> None:
 
 
 def _render_pipeline_report(context: PublishContext) -> None:
-    summary = Table(
-        show_header=True,
-        header_style=THEME.text_muted,
-        border_style=THEME.border_primary,
-        box=_table_box_for_stream(sys.stdout),
-        expand=True,
-    )
-    summary.add_column("Phase", style=THEME.text_body)
-    summary.add_column("Grade", style=THEME.text_muted, no_wrap=True)
-    summary.add_column("Reason", style=THEME.text_body)
-    for phase, grade, reason in _report_phase_rows(context):
-        summary.add_row(phase, grade, reason)
-    CONSOLE.print(_frame(summary, title="Evaluation Summary"))
+    sections = _report_detail_sections(context)
+    for index, (title, rows) in enumerate(sections):
+        if index:
+            _print_step_separator()
+        table = Table.grid(expand=True, padding=(0, 2))
+        table.add_column(style=THEME.text_muted, no_wrap=True)
+        table.add_column(style=THEME.text_body)
+        for label, value in rows:
+            table.add_row(label, value)
+        CONSOLE.print(_frame(table, title=title))
 
 
 def _render_bundle(context: PublishContext, bundle_bytes: bytes) -> None:

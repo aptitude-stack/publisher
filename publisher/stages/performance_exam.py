@@ -81,6 +81,7 @@ class PerformanceExamStage(PublisherStage):
             "models_tested": result.models_tested,
             "validation_errors": result.validation_errors,
             "validation_warnings": result.validation_warnings,
+            "recommendations": result.recommendations,
             "command": result.command,
             "artifact_dir": result.artifact_dir,
             "reason": result.reason,

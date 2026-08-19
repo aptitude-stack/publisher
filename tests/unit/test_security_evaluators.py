@@ -299,7 +299,7 @@ def test_upskill_generates_openai_cases_when_no_file_is_configured(tmp_path, mon
         captured["command"] = command
         runs_dir = Path(command[command.index("--runs-dir") + 1])
         _write_upskill_batch_summary(runs_dir)
-        return subprocess.CompletedProcess(command, 0, "", "")
+        return subprocess.CompletedProcess(command, 0, "Recommendation: keep skill\n", "")
 
     monkeypatch.setattr(upskill_eval, "resolve_executable", lambda *args, **kwargs: "upskill")
     monkeypatch.setattr(upskill_eval, "run_command", fake_run)
@@ -317,6 +317,7 @@ def test_upskill_generates_openai_cases_when_no_file_is_configured(tmp_path, mon
     assert result.skilled_success_rate == 1.0
     assert result.baseline_avg_tokens == 20
     assert result.skilled_avg_tokens == 10
+    assert result.recommendations == ["keep skill"]
 
 
 def test_upskill_uses_explicit_cases_instead_of_generating_them(tmp_path, monkeypatch) -> None:

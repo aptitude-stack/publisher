@@ -42,6 +42,7 @@ class UpskillEvaluation:
     models_tested: list[str] = field(default_factory=list)
     validation_errors: list[str] = field(default_factory=list)
     validation_warnings: list[str] = field(default_factory=list)
+    recommendations: list[str] = field(default_factory=list)
     command: list[str] = field(default_factory=list)
     artifact_dir: str | None = None
     reason: str | None = None
@@ -151,6 +152,7 @@ def run_upskill_evaluation(*, skill_root: Path, artifacts_dir: Path) -> UpskillE
         models_tested=parsed.get("models_tested", []),
         validation_errors=validation_errors,
         validation_warnings=parsed.get("validation_warnings", []),
+        recommendations=parsed.get("recommendations", []),
         command=command,
         artifact_dir=str(upskill_dir),
         reason=reason,
@@ -344,6 +346,13 @@ def _metrics_from_table_output(value: str) -> dict[str, Any]:
             2,
         )
 
+    recommendations = re.findall(r"Recommendation:\s*(.+)", value)
+    if recommendations:
+        metrics["recommendations"] = [
+            re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", item).strip()
+            for item in recommendations
+        ]
+
     return metrics
 
 
@@ -351,6 +360,7 @@ def _normalize_payloads(payloads: list[Any]) -> dict[str, Any]:
     metrics: dict[str, Any] = {
         "validation_errors": [],
         "validation_warnings": [],
+        "recommendations": [],
         "models_tested": [],
     }
     for payload in payloads:
@@ -362,7 +372,7 @@ def _merge_metrics(target: dict[str, Any], update: dict[str, Any]) -> None:
     for key, value in update.items():
         if value is None:
             continue
-        if key in {"validation_errors", "validation_warnings", "models_tested"}:
+        if key in {"validation_errors", "validation_warnings", "recommendations", "models_tested"}:
             current = target.setdefault(key, [])
             for item in value:
                 if item not in current:
@@ -425,6 +435,9 @@ def _metrics_from_payload(payload: Any) -> dict[str, Any]:
         "models_tested": _coerce_string_list(payload.get("models") or payload.get("models_tested")),
         "validation_errors": _coerce_string_list(payload.get("errors")),
         "validation_warnings": _coerce_string_list(payload.get("warnings")),
+        "recommendations": _coerce_string_list(
+            _first_present(payload, "recommendations", "suggestions", "improvements")
+        ),
     }
     if metrics["baseline_success_rate"] is not None and metrics["skilled_success_rate"] is not None:
         metrics["skill_lift"] = round(
@@ -494,6 +507,7 @@ def _metrics_from_upstream_run_summary(payload: dict[str, Any]) -> dict[str, Any
             if result.get("error_message")
         ],
         "validation_warnings": [],
+        "recommendations": [],
     }
     if baseline_success is not None and skilled_success is not None:
         metrics["skill_lift"] = round(skilled_success - baseline_success, 4)

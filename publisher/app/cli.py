@@ -198,8 +198,9 @@ def _add_shared_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--version", help="override the semantic version for this publish")
     parser.add_argument(
         "--verbose",
-        action="store_true",
-        help="show detailed structure, risk, and quality summaries",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="show detailed structure, risk, and quality summaries (default)",
     )
     _add_publish_metadata_arguments(
         parser,
@@ -737,46 +738,14 @@ def _run_pipeline(args: argparse.Namespace, *, skill_path: str | None = None):
 def _print_pipeline_report(context, *, verbose: bool = False) -> None:
     rows = _report_phase_rows(context)
     if not verbose:
-        print("Phase      Grade       Reason")
+        print("Phase      Grade       Details")
         print(_separator())
         for phase, grade, reason in rows:
             print(f"{phase:<10} {grade:<11} {reason}")
         return
 
-    phase_rows = {phase: (grade, reason) for phase, grade, reason in rows}
-    structure_grade, structure_reason = phase_rows["Structure"]
-    risk_grade, risk_reason = phase_rows["Risk"]
-    quality_grade, quality_reason = phase_rows["Quality"]
-    _print_report_block(
-        "Structure Validation",
-        [
-            ("Grade", structure_grade),
-            ("Reason", structure_reason),
-            ("Warnings", str(len(context.validation.warnings))),
-        ],
-    )
-    _print_report_block(
-        "Risk Validation",
-        [
-            ("Grade", risk_grade),
-            ("LLM Guard status", _evaluation_status(context, "llm_guard_security")),
-            ("Findings", str(len(context.security.findings))),
-            ("Reason", risk_reason),
-        ],
-    )
-    _print_report_block(
-        "Quality Evaluation",
-        [
-            ("Grade", quality_grade),
-            ("Upskill status", _evaluation_status(context, "upskill_evaluation")),
-            ("Performance", str(context.performance_exam.score)),
-            ("Maturity", str(context.metadata.maturity_score)),
-            ("Lift", str(context.performance_exam.skill_lift)),
-            ("Token delta", str(context.performance_exam.token_delta)),
-            ("Publish decision", str(context.ranking.publish_decision)),
-            ("Reason", quality_reason),
-        ],
-    )
+    for title, detail_rows in _report_detail_sections(context):
+        _print_report_block(title, detail_rows)
 
 
 def _print_report_block(title: str, rows: list[tuple[str, str]]) -> None:
@@ -792,6 +761,73 @@ def _evaluation_status(context, key: str) -> str:
     return str(value.get("status", "not run")) if isinstance(value, dict) else "not run"
 
 
+def _report_detail_sections(context) -> list[tuple[str, list[tuple[str, str]]]]:
+    phase_rows = {phase: (grade, reason) for phase, grade, reason in _report_phase_rows(context)}
+    structure_grade, structure_reason = phase_rows["Structure"]
+    risk_grade, risk_reason = phase_rows["Risk"]
+    quality_grade, quality_reason = phase_rows["Quality"]
+
+    structure_rows = [("Status", structure_grade)]
+    structure_rows.extend(
+        (f"Issue {index}", issue)
+        for index, issue in enumerate(context.validation.errors, start=1)
+    )
+    structure_rows.extend(
+        (f"Warning {index}", warning)
+        for index, warning in enumerate(context.validation.warnings, start=1)
+    )
+    if structure_grade == "failed" and not context.validation.errors:
+        structure_rows.append(("Issue", structure_reason))
+
+    risk_rows = [
+        ("Decision", context.security.decision or risk_grade),
+        ("Safety score", _format_score(context.security.score)),
+        ("LLM Guard status", _evaluation_status(context, "llm_guard_security")),
+        ("Findings", str(len(context.security.findings))),
+    ]
+    if risk_reason != "No blocking risk found.":
+        risk_rows.append(("Issue", risk_reason))
+
+    quality_status = context.metadata.extra.get("upskill_evaluation")
+    quality_rows = [
+        ("Rating", quality_grade),
+        ("Upskill status", _evaluation_status(context, "upskill_evaluation")),
+        ("Performance score", _format_score(context.performance_exam.score)),
+        ("Maturity score", _format_score(context.metadata.maturity_score)),
+        ("Overall score", _format_score(context.ranking.total_score)),
+        ("Lift", str(context.performance_exam.skill_lift)),
+        ("Token delta", str(context.performance_exam.token_delta)),
+        ("Publish decision", str(context.ranking.publish_decision)),
+    ]
+    if isinstance(quality_status, dict):
+        reason = quality_status.get("reason")
+        if reason:
+            quality_rows.append(("Reason", str(reason)))
+        quality_rows.extend(
+            (f"Detail {index}", str(error))
+            for index, error in enumerate(quality_status.get("validation_errors", []), start=1)
+        )
+        quality_rows.extend(
+            (f"Suggestion {index}", str(recommendation))
+            for index, recommendation in enumerate(quality_status.get("recommendations", []), start=1)
+        )
+    if quality_grade == "failed":
+        quality_rows.append(("Issue", quality_reason))
+
+    return [
+        ("Structure Validation", structure_rows),
+        ("Risk Validation", risk_rows),
+        ("Quality Evaluation", quality_rows),
+    ]
+
+
+def _format_score(value: float | None) -> str:
+    """Render normalized 0–1 scores as a user-facing score out of ten."""
+    if value is None:
+        return "not scored"
+    return f"{value * 10:.1f} / 10"
+
+
 def _report_phase_rows(context) -> list[tuple[str, str, str]]:
     """Return the three user-facing evaluation phases without pipeline internals."""
     structure_gates = _phase_gates(context, {"discovery_gate", "identity_gate", "metadata_gate", "validation_gate"})
@@ -805,8 +841,6 @@ def _report_phase_rows(context) -> list[tuple[str, str, str]]:
 
     risk_issue = _first_gate_issue(risk_gates) or _first_security_finding(context)
     risk_grade = context.security.decision or ("failed" if risk_issue else "not scored")
-    if context.security.score is not None:
-        risk_grade = f"{risk_grade} ({context.security.score:.2f})"
     risk_reason = risk_issue or "No blocking risk found."
 
     quality_status = context.metadata.extra.get("upskill_evaluation", {})
@@ -815,16 +849,16 @@ def _report_phase_rows(context) -> list[tuple[str, str, str]]:
     ) or bool(_first_gate_issue(quality_gates))
     quality_grade = "failed" if quality_failed else (context.ranking.label or "not evaluated")
     quality_reason = (
+        str(quality_status.get("reason"))
+        if isinstance(quality_status, dict) and quality_status.get("reason")
+        else None
+    )
+    quality_reason = quality_reason or (
         _first_item(quality_status.get("validation_errors", []))
         if isinstance(quality_status, dict)
         else None
     )
     quality_reason = quality_reason or _first_gate_issue(quality_gates)
-    quality_reason = quality_reason or (
-        str(quality_status.get("reason"))
-        if isinstance(quality_status, dict) and quality_status.get("reason")
-        else None
-    )
     quality_reason = quality_reason or (
         "Quality evaluation completed."
         if context.performance_exam.score is not None
@@ -833,8 +867,18 @@ def _report_phase_rows(context) -> list[tuple[str, str, str]]:
 
     return [
         ("Structure", structure_grade, structure_reason),
-        ("Risk", risk_grade, risk_reason),
-        ("Quality", quality_grade, quality_reason),
+        (
+            "Risk",
+            risk_grade,
+            f"Safety score {_format_score(context.security.score)}. {risk_reason}",
+        ),
+        (
+            "Quality",
+            quality_grade,
+            "Performance score "
+            f"{_format_score(context.performance_exam.score)}; overall score "
+            f"{_format_score(context.ranking.total_score)}. {quality_reason}",
+        ),
     ]
 
 
