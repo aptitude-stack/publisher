@@ -189,6 +189,64 @@ def test_build_inspect_plan_skips_publish_intent(monkeypatch, tmp_path: Path) ->
     assert "Publish intent" not in selections
 
 
+def test_failed_inspection_retries_the_inspection_flow(monkeypatch, tmp_path: Path) -> None:
+    actions = iter(["inspect", "upload_another", "exit"])
+    build_actions: list[str] = []
+    confirmations = iter([True, False])
+
+    monkeypatch.setattr(menu, "_render_header", lambda: None)
+    monkeypatch.setattr(menu, "_select", lambda *args, **kwargs: next(actions))
+    monkeypatch.setattr(
+        menu,
+        "_build_publish_plan",
+        lambda action: build_actions.append(action)
+        or menu.PublishPlan(
+            action=action,
+            skill_path=tmp_path,
+            slug=None,
+            intent="create_skill",
+            trust_tier="untrusted",
+            namespace="public",
+            artifact_origin="internal",
+            policy_pack_slug=None,
+            publisher_identity=None,
+            scan_profile="fast",
+        ),
+    )
+    monkeypatch.setattr(menu, "_print_step_separator", lambda: None)
+    monkeypatch.setattr(menu, "_render_plan", lambda plan: None)
+    monkeypatch.setattr(menu, "_confirm", lambda *args, **kwargs: next(confirmations))
+    monkeypatch.setattr(menu, "_execute_plan", lambda plan: 1)
+
+    assert menu.run_menu() == 0
+    assert build_actions == ["inspect", "inspect"]
+
+
+def test_failed_inspection_labels_retry_as_inspection(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_select(title, options, **kwargs):
+        captured["title"] = title
+        captured["options"] = options
+        captured["descriptions"] = kwargs["descriptions"]
+        return "main_menu"
+
+    monkeypatch.setattr(menu, "_select", fake_select)
+
+    assert menu._select_failure_action("inspect") == "main_menu"
+    assert captured == {
+        "title": "Workflow failed",
+        "options": [
+            ("Inspect another skill", "upload_another"),
+            ("Back to main menu", "main_menu"),
+        ],
+        "descriptions": {
+            "upload_another": "Start a new inspection workflow with a different skill.",
+            "main_menu": "Return to the first menu.",
+        },
+    }
+
+
 def test_flow_options_hide_batch_upload_without_admin_token(monkeypatch) -> None:
     monkeypatch.delenv("APTITUDE_ADMIN_TOKEN", raising=False)
     monkeypatch.delenv("APTITUDE_REGISTRY_ADMIN_TOKEN", raising=False)

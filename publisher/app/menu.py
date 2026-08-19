@@ -161,11 +161,11 @@ def run_menu() -> int:
                     continue
 
                 while result != 0:
-                    failure_action = _select_failure_action()
+                    failure_action = _select_failure_action(action)
                     if failure_action == "main_menu":
                         break
 
-                    plan = _build_publish_plan("publish")
+                    plan = _build_publish_plan(action)
                     _print_step_separator()
                     _render_plan(plan)
                     _print_step_separator()
@@ -421,17 +421,23 @@ def _select_skill(skills: list[MenuSkill]) -> MenuSkill | None:
     )
 
 
-def _select_failure_action() -> FailureAction:
+def _select_failure_action(action: Action) -> FailureAction:
+    retry_label = "Inspect another skill" if action == "inspect" else "Upload another skill"
+    retry_description = (
+        "Start a new inspection workflow with a different skill."
+        if action == "inspect"
+        else "Start a new publish workflow with a different skill."
+    )
     CONSOLE.print()
     return _select(
         "Workflow failed",
         [
-            ("Upload another skill", "upload_another"),
+            (retry_label, "upload_another"),
             ("Back to main menu", "main_menu"),
         ],
         subtitle="Choose what to do next.",
         descriptions={
-            "upload_another": "Start a new publish workflow with a different skill.",
+            "upload_another": retry_description,
             "main_menu": "Return to the first menu.",
         },
         allow_back=True,
