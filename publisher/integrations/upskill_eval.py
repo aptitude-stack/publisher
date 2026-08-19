@@ -99,6 +99,13 @@ def run_upskill_evaluation(*, skill_root: Path, artifacts_dir: Path) -> UpskillE
 
     try:
         command_env = os.environ.copy()
+        command_env["UPSKILL_CONFIG"] = str(
+            _write_upskill_config(
+                upskill_dir=upskill_dir,
+                provider=provider,
+                model=model[0] if model else model_name,
+            )
+        )
         if base_url and provider == "openai":
             command_env["OPENAI_API_BASE"] = base_url
         if api_key and provider == "openai":
@@ -255,6 +262,24 @@ def _build_command(
 def _upskill_model_reference(provider: str, model: str) -> str:
     """Use upstream Upskill's provider-qualified model format."""
     return model if model.startswith(f"{provider}.") else f"{provider}.{model}"
+
+
+def _write_upskill_config(*, upskill_dir: Path, provider: str, model: str) -> Path:
+    """Pin Upskill's FastAgent defaults to the selected publisher model."""
+    model_reference = _upskill_model_reference(provider, model)
+    config_path = upskill_dir / "upskill.config.yaml"
+    config_path.write_text(
+        "\n".join(
+            (
+                f"skill_generation_model: {model_reference}",
+                f"test_gen_model: {model_reference}",
+                f"eval_model: {model_reference}",
+                "",
+            )
+        ),
+        encoding="utf-8",
+    )
+    return config_path
 
 
 def _missing_upskill_metrics_errors(parsed: dict[str, Any]) -> list[str]:

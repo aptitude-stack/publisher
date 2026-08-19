@@ -297,6 +297,7 @@ def test_upskill_generates_openai_cases_when_no_file_is_configured(tmp_path, mon
 
     def fake_run(command, **kwargs):
         captured["command"] = command
+        captured["env"] = kwargs["env"]
         runs_dir = Path(command[command.index("--runs-dir") + 1])
         _write_upskill_batch_summary(runs_dir)
         return subprocess.CompletedProcess(command, 0, "Recommendation: keep skill\n", "")
@@ -312,6 +313,12 @@ def test_upskill_generates_openai_cases_when_no_file_is_configured(tmp_path, mon
     assert command[command.index("--test-gen-model") + 1] == "openai.gpt-4.1-mini"
     assert command[command.index("--model") + 1] == "openai.gpt-4.1-mini"
     assert "--verbose" in command
+    config_path = Path(captured["env"]["UPSKILL_CONFIG"])
+    assert config_path.read_text(encoding="utf-8") == (
+        "skill_generation_model: openai.gpt-4.1-mini\n"
+        "test_gen_model: openai.gpt-4.1-mini\n"
+        "eval_model: openai.gpt-4.1-mini\n"
+    )
     assert result.test_case_count == 2
     assert result.baseline_success_rate == 0.5
     assert result.skilled_success_rate == 1.0
