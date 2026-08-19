@@ -51,7 +51,7 @@ def test_report_marks_structure_not_evaluated_when_identity_stops_pipeline() -> 
     assert phase_rows["Structure"] == ("not evaluated", "No structure checks were run.")
 
 
-def test_risk_and_quality_summaries_use_decimal_score_denominators() -> None:
+def test_quality_results_exclude_derived_scores_and_final_scores_stay_separate() -> None:
     context = PublishContext(source=SkillSource(file_path="skills/example"))
     context.validation.passed = True
     context.security.score = 0.5
@@ -59,7 +59,7 @@ def test_risk_and_quality_summaries_use_decimal_score_denominators() -> None:
     context.security.findings = [{"severity": "high", "check": "prompt injection"}]
     context.performance_exam.score = 0.7
     context.metadata.maturity_score = 0.4
-    context.ranking.total_score = 0.8
+    context.ranking.publish_decision = "review_required"
     context.metadata.extra["upskill_evaluation"] = {
         "status": "failed",
         "reason": "upskill failed",
@@ -68,14 +68,19 @@ def test_risk_and_quality_summaries_use_decimal_score_denominators() -> None:
     sections = dict(_report_detail_sections(context))
     risk = dict(sections["Risk Validation"])
     quality = dict(sections["Quality Evaluation"])
+    final_scores = dict(sections["Final Scores"])
 
     assert risk["Safety score"] == "5.0 / 10.0"
     assert risk["Summary"] == "Safety score 5.0 / 10.0. high: prompt injection"
     assert "Issue" not in risk
     assert quality["Performance score"] == "7.0 / 10.0"
-    assert quality["Maturity score"] == "4.0 / 10.0"
-    assert quality["Overall score"] == "8.0 / 10.0"
-    assert quality["Summary"] == (
-        "Performance score 7.0 / 10.0; overall score 8.0 / 10.0. upskill failed"
-    )
+    assert "Maturity score" not in quality
+    assert "Overall score" not in quality
+    assert "Publish decision" not in quality
+    assert quality["Summary"] == "Performance score 7.0 / 10.0. upskill failed"
     assert "Issue" not in quality
+    assert final_scores == {
+        "Security score": "5.0 / 10.0",
+        "Maturity score": "4.0 / 10.0",
+        "Publish decision": "review_required",
+    }

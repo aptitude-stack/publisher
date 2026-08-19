@@ -167,15 +167,16 @@ def test_pipeline_report_verbose_keeps_only_phase_summaries(
     assert "Structure Validation" in output
     assert "Risk Validation" in output
     assert "Quality Evaluation" in output
+    assert "Final Scores" in output
     assert "LLM Guard status" in output
     assert "Upskill status" in output
     assert "Safety score" in output
+    assert "Security score" in output
     assert "Performance score" in output
     assert "Maturity score" in output
-    assert "Overall score" in output
+    assert "Overall score" not in output
     assert "10.0 / 10.0" in output
     assert "8.0 / 10.0" in output
-    assert "7.5 / 10.0" in output
     assert "Reason" in output
     assert "upskill exited with status 1" in output
     assert "Stages" not in output

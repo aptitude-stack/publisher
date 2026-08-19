@@ -803,14 +803,10 @@ def _report_detail_sections(context) -> list[tuple[str, list[tuple[str, str]]]]:
 
     quality_status = context.metadata.extra.get("upskill_evaluation")
     quality_rows = [
-        ("Rating", quality_grade),
         ("Upskill status", _evaluation_status(context, "upskill_evaluation")),
         ("Performance score", _format_score(context.performance_exam.score)),
-        ("Maturity score", _format_score(context.metadata.maturity_score)),
-        ("Overall score", _format_score(context.ranking.total_score)),
         ("Lift", str(context.performance_exam.skill_lift)),
         ("Token delta", str(context.performance_exam.token_delta)),
-        ("Publish decision", str(context.ranking.publish_decision)),
     ]
     if isinstance(quality_status, dict):
         reason = quality_status.get("reason")
@@ -827,11 +823,18 @@ def _report_detail_sections(context) -> list[tuple[str, list[tuple[str, str]]]]:
     if quality_grade == "failed":
         quality_rows.append(("Summary", quality_reason))
 
+    final_score_rows = [
+        ("Security score", _format_score(context.security.score)),
+        ("Maturity score", _format_score(context.metadata.maturity_score)),
+        ("Publish decision", str(context.ranking.publish_decision)),
+    ]
+
     return [
         ("Structure Validation", structure_rows),
         ("Publish Readiness", readiness_rows),
         ("Risk Validation", risk_rows),
         ("Quality Evaluation", quality_rows),
+        ("Final Scores", final_score_rows),
     ]
 
 
@@ -905,9 +908,7 @@ def _report_phase_rows(context) -> list[tuple[str, str, str]]:
         (
             "Quality",
             quality_grade,
-            "Performance score "
-            f"{_format_score(context.performance_exam.score)}; overall score "
-            f"{_format_score(context.ranking.total_score)}. {quality_reason}",
+            f"Performance score {_format_score(context.performance_exam.score)}. {quality_reason}",
         ),
     ]
 
