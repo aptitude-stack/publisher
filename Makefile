@@ -12,7 +12,10 @@ PUBLISH_URL := https://test.pypi.org/legacy/
 CHECK_URL := https://test.pypi.org/simple/
 endif
 
-.PHONY: test build build-publish
+.PHONY: run test build build-publish
+
+run:
+	APTITUDE_REGISTRY_URL=http://127.0.0.1:8000 $(UV) run aptitude-publisher
 
 test:
 	$(UV) run --extra dev python -m pytest

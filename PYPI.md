@@ -40,10 +40,10 @@ Publisher uploads require a registry publish token:
 export APTITUDE_PUBLISH_TOKEN=publisher-token
 ```
 
-The default registry URL is `http://127.0.0.1:8000`. Override it for production or self-hosted registries:
+The packaged CLI and MCP server use `https://api.aptitude-registry.dev` by default. For local development or a self-hosted registry, override it:
 
 ```bash
-export APTITUDE_REGISTRY_URL=https://api.aptitude-registry.dev
+export APTITUDE_REGISTRY_URL=http://127.0.0.1:8000
 ```
 
 Relationship and existing-skill checks can also use a read token:

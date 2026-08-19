@@ -87,6 +87,34 @@ def test_inspect_skill_returns_structured_evaluation(tmp_path: Path) -> None:
     assert pipeline.run_count == 1
 
 
+def test_mcp_defaults_to_the_public_registry(monkeypatch) -> None:
+    from publisher.interfaces.mcp.server import _default_registry_url
+
+    for name in ("APTITUDE_REGISTRY_URL", "APTITUDE_SERVER_BASE_URL", "APP_PORT"):
+        monkeypatch.delenv(name, raising=False)
+
+    assert _default_registry_url() == "https://api.aptitude-registry.dev"
+
+
+def test_mcp_entrypoint_loads_local_environment_defaults(monkeypatch) -> None:
+    from publisher.interfaces.mcp import main
+
+    calls: list[str] = []
+
+    class FakeServer:
+        def run(self, *, transport: str) -> None:
+            calls.append(transport)
+
+    monkeypatch.setattr(
+        "publisher.app.cli._load_local_env_defaults", lambda: calls.append("env")
+    )
+    monkeypatch.setattr(main, "create_server", lambda: FakeServer())
+
+    main.main()
+
+    assert calls == ["env", "stdio"]
+
+
 def test_publish_skill_requires_environment_token_before_pipeline(
     tmp_path: Path, monkeypatch
 ) -> None:

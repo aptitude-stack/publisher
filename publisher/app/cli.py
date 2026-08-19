@@ -40,7 +40,7 @@ from publisher.registry.client import (
 )
 
 
-_DEFAULT_REGISTRY_URL = "http://127.0.0.1:8000"
+_DEFAULT_REGISTRY_URL = "https://api.aptitude-registry.dev"
 _PACKAGE_NAME = "aptitude-publisher"
 _DEFAULT_PROG = "aptitude-publisher"
 _TEXT_BODY = "white"
@@ -125,7 +125,7 @@ def _build_parser(prog: str = _DEFAULT_PROG) -> argparse.ArgumentParser:
         default=_default_registry_url(),
         help=(
             "registry base URL; defaults to APTITUDE_REGISTRY_URL, "
-            "APTITUDE_SERVER_BASE_URL, or local APP_PORT"
+            "APTITUDE_SERVER_BASE_URL, local APP_PORT, or the public registry"
         ),
     )
     publish_parser.add_argument(
@@ -153,7 +153,7 @@ def _build_parser(prog: str = _DEFAULT_PROG) -> argparse.ArgumentParser:
         default=_default_registry_url(),
         help=(
             "registry base URL; defaults to APTITUDE_REGISTRY_URL, "
-            "APTITUDE_SERVER_BASE_URL, or local APP_PORT"
+            "APTITUDE_SERVER_BASE_URL, local APP_PORT, or the public registry"
         ),
     )
     batch_parser.add_argument(

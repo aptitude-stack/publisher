@@ -28,7 +28,7 @@ from publisher.registry.client import (
 )
 
 
-_DEFAULT_REGISTRY_URL = "http://127.0.0.1:8000"
+_DEFAULT_REGISTRY_URL = "https://api.aptitude-registry.dev"
 _PUBLISH_TOKEN_ENV_NAMES = (
     "APTITUDE_PUBLISH_TOKEN",
     "APTITUDE_INTEGRATION_PUBLISH_TOKEN",

@@ -56,6 +56,17 @@ def test_root_help_still_prints_cli_help(capsys: pytest.CaptureFixture[str]) -> 
     assert "usage: aptitude-publisher" in capsys.readouterr().out
 
 
+def test_publish_cli_defaults_to_the_public_registry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for name in ("APTITUDE_REGISTRY_URL", "APTITUDE_SERVER_BASE_URL", "APP_PORT"):
+        monkeypatch.delenv(name, raising=False)
+
+    args = _build_parser().parse_args(["publish", "skills/example"])
+
+    assert args.registry_url == "https://api.aptitude-registry.dev"
+
+
 def test_mcp_subcommand_runs_stdio_entrypoint(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[bool] = []
     monkeypatch.setattr("publisher.app.cli._load_local_env_defaults", lambda: None)
