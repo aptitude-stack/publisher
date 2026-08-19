@@ -38,6 +38,8 @@ class UpskillEvaluation:
     skill_lift: float | None = None
     baseline_avg_tokens: int | None = None
     skilled_avg_tokens: int | None = None
+    baseline_total_tokens: int | None = None
+    skilled_total_tokens: int | None = None
     token_delta: int | None = None
     models_tested: list[str] = field(default_factory=list)
     validation_errors: list[str] = field(default_factory=list)
@@ -172,6 +174,8 @@ def run_upskill_evaluation(*, skill_root: Path, artifacts_dir: Path) -> UpskillE
         skill_lift=parsed.get("skill_lift"),
         baseline_avg_tokens=parsed.get("baseline_avg_tokens"),
         skilled_avg_tokens=parsed.get("skilled_avg_tokens"),
+        baseline_total_tokens=parsed.get("baseline_total_tokens"),
+        skilled_total_tokens=parsed.get("skilled_total_tokens"),
         token_delta=parsed.get("token_delta"),
         models_tested=parsed.get("models_tested", []),
         validation_errors=validation_errors,
@@ -598,12 +602,24 @@ def _metrics_from_upstream_run_summary(payload: dict[str, Any]) -> dict[str, Any
     skilled_success = success_rate(skilled)
     baseline_tokens = avg_tokens(baseline)
     skilled_tokens = avg_tokens(skilled)
+    baseline_total_tokens = _coerce_int(
+        baseline.get("stats", {}).get("total_tokens")
+        if isinstance(baseline.get("stats"), dict)
+        else None
+    )
+    skilled_total_tokens = _coerce_int(
+        skilled.get("stats", {}).get("total_tokens")
+        if isinstance(skilled.get("stats"), dict)
+        else None
+    )
     metrics: dict[str, Any] = {
         "test_case_count": _coerce_int(skilled.get("assertions_total")),
         "baseline_success_rate": baseline_success,
         "skilled_success_rate": skilled_success,
         "baseline_avg_tokens": baseline_tokens,
         "skilled_avg_tokens": skilled_tokens,
+        "baseline_total_tokens": baseline_total_tokens,
+        "skilled_total_tokens": skilled_total_tokens,
         "models_tested": _coerce_string_list(payload.get("model")),
         "validation_errors": [
             str(result["error_message"])

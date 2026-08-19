@@ -166,7 +166,7 @@ def test_pipeline_report_verbose_keeps_only_phase_summaries(
     assert "Phase      Grade" not in output
     assert "Structure Validation" in output
     assert "Risk Validation" in output
-    assert "Quality Evaluation" in output
+    assert "Performance Evaluation" in output
     assert "Final Scores" in output
     assert "LLM Guard status" in output
     assert "Upskill status" in output

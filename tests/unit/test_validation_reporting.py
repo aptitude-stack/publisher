@@ -79,7 +79,7 @@ def test_quality_results_exclude_derived_scores_and_final_scores_stay_separate()
 
     sections = dict(_report_detail_sections(context))
     risk = dict(sections["Risk Validation"])
-    quality = dict(sections["Quality Evaluation"])
+    quality = dict(sections["Performance Evaluation"])
     final_scores = dict(sections["Final Scores"])
 
     assert risk["Safety score"] == "5.0 / 10.0"
@@ -109,7 +109,7 @@ def test_quality_labels_upskill_verdict_as_summary_and_keeps_actionable_suggesti
         ],
     }
 
-    quality = dict(dict(_report_detail_sections(context))["Quality Evaluation"])
+    quality = dict(dict(_report_detail_sections(context))["Performance Evaluation"])
 
     assert quality["Summary"] == "skill may not be beneficial"
     assert quality["Suggestion 1"] == "add a troubleshooting example"
@@ -125,17 +125,20 @@ def test_inconclusive_upskill_is_reported_for_review() -> None:
         "skilled_success_rate": 0.25,
         "skill_lift": 0.25,
         "token_delta": 1011,
+        "baseline_total_tokens": 1698,
+        "skilled_total_tokens": 9781,
     }
 
-    quality = dict(dict(_report_detail_sections(context))["Quality Evaluation"])
+    quality = dict(dict(_report_detail_sections(context))["Performance Evaluation"])
     phases = {phase: (grade, reason) for phase, grade, reason in _report_phase_rows(context)}
 
     assert quality["Summary"] == (
         "Performance score not scored. "
         "upskill generated duplicate exact-text verifiers"
     )
-    assert quality["Baseline success"] == "0%"
-    assert quality["Skilled success"] == "25%"
-    assert quality["Lift"] == "+25pp"
-    assert quality["Token delta"] == "1011"
+    assert "Baseline success" not in quality
+    assert "Skilled success" not in quality
+    assert "Lift" not in quality
+    assert "Token delta" not in quality
+    assert quality["Observed tokens"] == "baseline 1,698 · with skill 9,781"
     assert phases["Quality"][0] == "review_required"

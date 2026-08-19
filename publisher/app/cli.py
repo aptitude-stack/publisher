@@ -824,6 +824,7 @@ def _report_detail_sections(context) -> list[tuple[str, list[tuple[str, str]]]]:
 
     quality_status = context.metadata.extra.get("upskill_evaluation")
     quality_evidence = quality_status if isinstance(quality_status, dict) else {}
+    quality_inconclusive = quality_evidence.get("status") == "inconclusive"
     baseline_success = quality_evidence.get("baseline_success_rate")
     skilled_success = quality_evidence.get("skilled_success_rate")
     lift = quality_evidence.get("skill_lift")
@@ -835,13 +836,28 @@ def _report_detail_sections(context) -> list[tuple[str, list[tuple[str, str]]]]:
     quality_rows = [
         ("Upskill status", _evaluation_status(context, "upskill_evaluation")),
         ("Performance score", _format_score(context.performance_exam.score)),
-        ("Lift", _format_lift(lift)),
-        ("Token delta", str(token_delta)),
     ]
-    if baseline_success is not None:
-        quality_rows.append(("Baseline success", _format_percentage(baseline_success)))
-    if skilled_success is not None:
-        quality_rows.append(("Skilled success", _format_percentage(skilled_success)))
+    if quality_inconclusive:
+        baseline_total_tokens = quality_evidence.get("baseline_total_tokens")
+        skilled_total_tokens = quality_evidence.get("skilled_total_tokens")
+        if isinstance(baseline_total_tokens, int) and isinstance(skilled_total_tokens, int):
+            quality_rows.append(
+                (
+                    "Observed tokens",
+                    f"baseline {baseline_total_tokens:,} · with skill {skilled_total_tokens:,}",
+                )
+            )
+    else:
+        quality_rows.extend(
+            [
+                ("Lift", _format_lift(lift)),
+                ("Token delta", str(token_delta)),
+            ]
+        )
+        if baseline_success is not None:
+            quality_rows.append(("Baseline success", _format_percentage(baseline_success)))
+        if skilled_success is not None:
+            quality_rows.append(("Skilled success", _format_percentage(skilled_success)))
     if isinstance(quality_status, dict):
         reason = quality_status.get("reason")
         if reason:
@@ -878,7 +894,7 @@ def _report_detail_sections(context) -> list[tuple[str, list[tuple[str, str]]]]:
     return [
         ("Structure Validation", structure_rows),
         ("Risk Validation", risk_rows),
-        ("Quality Evaluation", quality_rows),
+        ("Performance Evaluation", quality_rows),
         ("Final Scores", final_score_rows),
     ]
 

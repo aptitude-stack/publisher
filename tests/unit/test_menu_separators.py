@@ -54,7 +54,7 @@ def test_interactive_pipeline_report_is_verbose_by_default(monkeypatch) -> None:
     rendered = output.getvalue()
     assert "Structure Validation" in rendered
     assert "Risk Validation" in rendered
-    assert "Quality Evaluation" in rendered
+    assert "Performance Evaluation" in rendered
     assert "Upskill status" in rendered
     assert "Safety score" in rendered
     assert "Finding 1" in rendered

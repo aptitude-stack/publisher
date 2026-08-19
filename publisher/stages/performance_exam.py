@@ -77,6 +77,8 @@ class PerformanceExamStage(PublisherStage):
             "skill_lift": result.skill_lift,
             "baseline_avg_tokens": result.baseline_avg_tokens,
             "skilled_avg_tokens": result.skilled_avg_tokens,
+            "baseline_total_tokens": result.baseline_total_tokens,
+            "skilled_total_tokens": result.skilled_total_tokens,
             "token_delta": result.token_delta,
             "models_tested": result.models_tested,
             "validation_errors": result.validation_errors,

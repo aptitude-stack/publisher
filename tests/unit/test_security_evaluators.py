@@ -545,6 +545,8 @@ def test_upskill_generated_zero_zero_suite_is_inconclusive(tmp_path, monkeypatch
     assert evaluation.skilled_success_rate == 0.25
     assert evaluation.skill_lift == 0.25
     assert evaluation.token_delta == 1011
+    assert evaluation.baseline_total_tokens == 1698
+    assert evaluation.skilled_total_tokens == 9781
 
     context = PublisherPipeline().create_context(file_path=str(tmp_path))
     context.validation.passed = True
