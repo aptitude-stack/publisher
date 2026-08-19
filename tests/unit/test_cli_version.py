@@ -173,9 +173,9 @@ def test_pipeline_report_verbose_keeps_only_phase_summaries(
     assert "Performance score" in output
     assert "Maturity score" in output
     assert "Overall score" in output
-    assert "10.0 / 10" in output
-    assert "8.0 / 10" in output
-    assert "7.5 / 10" in output
+    assert "10.0 / 10.0" in output
+    assert "8.0 / 10.0" in output
+    assert "7.5 / 10.0" in output
     assert "Reason" in output
     assert "upskill exited with status 1" in output
     assert "Stages" not in output

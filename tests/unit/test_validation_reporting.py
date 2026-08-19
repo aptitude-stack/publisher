@@ -49,3 +49,33 @@ def test_report_marks_structure_not_evaluated_when_identity_stops_pipeline() -> 
     phase_rows = dict((phase, (grade, reason)) for phase, grade, reason in _report_phase_rows(context))
 
     assert phase_rows["Structure"] == ("not evaluated", "No structure checks were run.")
+
+
+def test_risk_and_quality_summaries_use_decimal_score_denominators() -> None:
+    context = PublishContext(source=SkillSource(file_path="skills/example"))
+    context.validation.passed = True
+    context.security.score = 0.5
+    context.security.decision = "review_required"
+    context.security.findings = [{"severity": "high", "check": "prompt injection"}]
+    context.performance_exam.score = 0.7
+    context.metadata.maturity_score = 0.4
+    context.ranking.total_score = 0.8
+    context.metadata.extra["upskill_evaluation"] = {
+        "status": "failed",
+        "reason": "upskill failed",
+    }
+
+    sections = dict(_report_detail_sections(context))
+    risk = dict(sections["Risk Validation"])
+    quality = dict(sections["Quality Evaluation"])
+
+    assert risk["Safety score"] == "5.0 / 10.0"
+    assert risk["Summary"] == "Safety score 5.0 / 10.0. high: prompt injection"
+    assert "Issue" not in risk
+    assert quality["Performance score"] == "7.0 / 10.0"
+    assert quality["Maturity score"] == "4.0 / 10.0"
+    assert quality["Overall score"] == "8.0 / 10.0"
+    assert quality["Summary"] == (
+        "Performance score 7.0 / 10.0; overall score 8.0 / 10.0. upskill failed"
+    )
+    assert "Issue" not in quality

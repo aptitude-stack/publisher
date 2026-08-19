@@ -799,7 +799,7 @@ def _report_detail_sections(context) -> list[tuple[str, list[tuple[str, str]]]]:
             if value:
                 risk_rows.append((f"{label} {index}", str(value)))
     if risk_reason != "No blocking risk found.":
-        risk_rows.append(("Issue", risk_reason))
+        risk_rows.append(("Summary", risk_reason))
 
     quality_status = context.metadata.extra.get("upskill_evaluation")
     quality_rows = [
@@ -825,7 +825,7 @@ def _report_detail_sections(context) -> list[tuple[str, list[tuple[str, str]]]]:
             for index, recommendation in enumerate(quality_status.get("recommendations", []), start=1)
         )
     if quality_grade == "failed":
-        quality_rows.append(("Issue", quality_reason))
+        quality_rows.append(("Summary", quality_reason))
 
     return [
         ("Structure Validation", structure_rows),
@@ -839,7 +839,7 @@ def _format_score(value: float | None) -> str:
     """Render normalized 0–1 scores as a user-facing score out of ten."""
     if value is None:
         return "not scored"
-    return f"{value * 10:.1f} / 10"
+    return f"{value * 10:.1f} / 10.0"
 
 
 def _report_phase_rows(context) -> list[tuple[str, str, str]]:
