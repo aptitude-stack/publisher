@@ -267,6 +267,11 @@ def _upskill_model_reference(provider: str, model: str) -> str:
 def _write_upskill_config(*, upskill_dir: Path, provider: str, model: str) -> Path:
     """Pin Upskill's FastAgent defaults to the selected publisher model."""
     model_reference = _upskill_model_reference(provider, model)
+    fastagent_config_path = upskill_dir / "fastagent.config.yaml"
+    fastagent_config_path.write_text(
+        f"default_model: {model_reference}\n",
+        encoding="utf-8",
+    )
     config_path = upskill_dir / "upskill.config.yaml"
     config_path.write_text(
         "\n".join(
@@ -274,6 +279,7 @@ def _write_upskill_config(*, upskill_dir: Path, provider: str, model: str) -> Pa
                 f"skill_generation_model: {model_reference}",
                 f"test_gen_model: {model_reference}",
                 f"eval_model: {model_reference}",
+                f"fastagent_config: {fastagent_config_path}",
                 "",
             )
         ),

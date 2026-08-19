@@ -1,0 +1,17 @@
+[
+  "fast-agent",
+  "go",
+  "--card",
+  "/Users/yonatan/Dev/Aptitude/publisher/tests/fixtures/skills/secure-good/runs/2026_08_20_01_25/eval/baseline/test_2/cards",
+  "--agent",
+  "evaluator",
+  "--model",
+  "gpt-4o-mini",
+  "--skills-dir",
+  "/Users/yonatan/Dev/Aptitude/publisher/tests/fixtures/skills/secure-good/runs/2026_08_20_01_25/eval/baseline/test_2/skills",
+  "--prompt-file",
+  "/Users/yonatan/Dev/Aptitude/publisher/tests/fixtures/skills/secure-good/runs/2026_08_20_01_25/eval/baseline/test_2/prompt.txt",
+  "--results",
+  "/Users/yonatan/Dev/Aptitude/publisher/tests/fixtures/skills/secure-good/runs/2026_08_20_01_25/eval/baseline/test_2/results.json",
+  "--quiet"
+]

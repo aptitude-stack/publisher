@@ -1,0 +1,15 @@
+{
+  "name": "2608200125-3yYjYN",
+  "created_at": "2026-08-20T01:25:16.532251",
+  "last_activity": "2026-08-20T01:25:16.533676",
+  "history_files": [
+    "history_evaluator.json"
+  ],
+  "metadata": {
+    "agent_name": "evaluator",
+    "last_history_by_agent": {
+      "evaluator": "history_evaluator.json"
+    },
+    "first_user_preview": "Make a checklist for preparing a presentation."
+  }
+}

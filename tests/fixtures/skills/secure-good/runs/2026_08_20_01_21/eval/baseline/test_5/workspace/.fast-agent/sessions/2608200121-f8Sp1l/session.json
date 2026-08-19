@@ -1,0 +1,15 @@
+{
+  "name": "2608200121-f8Sp1l",
+  "created_at": "2026-08-20T01:21:56.405416",
+  "last_activity": "2026-08-20T01:21:56.407220",
+  "history_files": [
+    "history_evaluator.json"
+  ],
+  "metadata": {
+    "agent_name": "evaluator",
+    "last_history_by_agent": {
+      "evaluator": "history_evaluator.json"
+    },
+    "first_user_preview": "Generate a checklist for weekly grocery shopping"
+  }
+}

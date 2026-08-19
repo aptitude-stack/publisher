@@ -318,6 +318,10 @@ def test_upskill_generates_openai_cases_when_no_file_is_configured(tmp_path, mon
         "skill_generation_model: openai.gpt-4.1-mini\n"
         "test_gen_model: openai.gpt-4.1-mini\n"
         "eval_model: openai.gpt-4.1-mini\n"
+        f"fastagent_config: {config_path.parent / 'fastagent.config.yaml'}\n"
+    )
+    assert (config_path.parent / "fastagent.config.yaml").read_text(encoding="utf-8") == (
+        "default_model: openai.gpt-4.1-mini\n"
     )
     assert result.test_case_count == 2
     assert result.baseline_success_rate == 0.5
