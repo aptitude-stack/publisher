@@ -59,7 +59,7 @@ wheels = [
 
 [[package]]
 name = "aptitude-publisher"
-version = "0.1.7"
+version = "0.1.8"
 source = { editable = "." }
 dependencies = [
     { name = "llm-guard" },
