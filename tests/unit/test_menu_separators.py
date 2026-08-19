@@ -247,6 +247,37 @@ def test_failed_inspection_retries_the_inspection_flow(monkeypatch, tmp_path: Pa
     assert build_actions == ["inspect", "inspect"]
 
 
+def test_successful_inspection_separates_the_next_main_menu_prompt(monkeypatch, tmp_path: Path) -> None:
+    actions = iter(["inspect", "exit"])
+    separators: list[bool] = []
+
+    monkeypatch.setattr(menu, "_render_header", lambda: None)
+    monkeypatch.setattr(menu, "_select", lambda *args, **kwargs: next(actions))
+    monkeypatch.setattr(
+        menu,
+        "_build_publish_plan",
+        lambda action: menu.PublishPlan(
+            action=action,
+            skill_path=tmp_path,
+            slug=None,
+            intent="create_skill",
+            trust_tier="untrusted",
+            namespace="public",
+            artifact_origin="internal",
+            policy_pack_slug=None,
+            publisher_identity=None,
+            scan_profile="fast",
+        ),
+    )
+    monkeypatch.setattr(menu, "_print_step_separator", lambda: separators.append(True))
+    monkeypatch.setattr(menu, "_render_plan", lambda plan: None)
+    monkeypatch.setattr(menu, "_confirm", lambda *args, **kwargs: True)
+    monkeypatch.setattr(menu, "_execute_plan", lambda plan: 0)
+
+    assert menu.run_menu() == 0
+    assert len(separators) == 3
+
+
 def test_failed_inspection_separates_main_menu_return(monkeypatch, tmp_path: Path) -> None:
     actions = iter(["inspect", "main_menu", "exit"])
     separators: list[bool] = []

@@ -132,10 +132,9 @@ def test_inconclusive_upskill_is_reported_for_review() -> None:
     quality = dict(dict(_report_detail_sections(context))["Performance Evaluation"])
     phases = {phase: (grade, reason) for phase, grade, reason in _report_phase_rows(context)}
 
-    assert quality["Summary"] == (
-        "Performance score not scored. "
-        "upskill generated duplicate exact-text verifiers"
-    )
+    assert quality["Reason"] == "upskill generated duplicate exact-text verifiers"
+    assert "Detail 1" not in quality
+    assert "Summary" not in quality
     assert "Baseline success" not in quality
     assert "Skilled success" not in quality
     assert "Lift" not in quality

@@ -862,10 +862,11 @@ def _report_detail_sections(context) -> list[tuple[str, list[tuple[str, str]]]]:
         reason = quality_status.get("reason")
         if reason:
             quality_rows.append(("Reason", str(reason)))
-        quality_rows.extend(
-            (f"Detail {index}", str(error))
-            for index, error in enumerate(quality_status.get("validation_errors", []), start=1)
-        )
+        if not quality_inconclusive:
+            quality_rows.extend(
+                (f"Detail {index}", str(error))
+                for index, error in enumerate(quality_status.get("validation_errors", []), start=1)
+            )
         verdict = None
         suggestions = []
         for recommendation in quality_status.get("recommendations", []):
@@ -880,7 +881,7 @@ def _report_detail_sections(context) -> list[tuple[str, list[tuple[str, str]]]]:
             (f"Suggestion {index}", suggestion)
             for index, suggestion in enumerate(suggestions, start=1)
         )
-    if quality_grade in {"failed", "review_required"} and not any(
+    if not quality_inconclusive and quality_grade in {"failed", "review_required"} and not any(
         label == "Summary" for label, _ in quality_rows
     ):
         quality_rows.append(("Summary", quality_reason))

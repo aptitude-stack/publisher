@@ -158,6 +158,7 @@ def run_menu() -> int:
                     continue
                 result = _execute_plan(plan)
                 if result == 0:
+                    _print_step_separator()
                     continue
 
                 while result != 0:
@@ -175,6 +176,7 @@ def run_menu() -> int:
                         break
                     result = _execute_plan(plan)
                     if result == 0:
+                        _print_step_separator()
                         break
             except _BackToMainMenu:
                 continue
