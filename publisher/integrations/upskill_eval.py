@@ -21,7 +21,7 @@ from publisher.integrations.external_tools import (
 
 
 _DEFAULT_TIMEOUT_SECONDS = 600
-_DEFAULT_MODEL = "gpt-4o-mini"
+_DEFAULT_MODEL = "gpt-4.1-mini"
 _DEFAULT_PROVIDER = "openai"
 
 

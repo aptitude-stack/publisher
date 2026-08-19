@@ -88,7 +88,7 @@ requires explicit test cases and does not generate a generic fallback case.
 ```bash
 export OPENAI_API_KEY=...
 export UPSKILL_PROVIDER=openai
-export UPSKILL_MODELS=gpt-4o-mini
+export UPSKILL_MODELS=gpt-4.1-mini
 export UPSKILL_TESTS_PATH=/absolute/path/to/upskill-tests.json
 export UPSKILL_NO_BASELINE=false
 ```
@@ -105,7 +105,7 @@ partial, empty, or failed Upskill evidence blocks publishing and records the
 reason in evaluator artifacts. A scored result that shows no benefit remains
 quality evidence, not an evaluator failure. For a live smoke check, run an
 inspect with the configuration above and verify `status: scored`,
-`gpt-4o-mini`, nonzero token metrics, and no validation errors. Evaluation
+`gpt-4.1-mini`, nonzero token metrics, and no validation errors. Evaluation
 sends skill/test content to OpenAI; see [OpenAI API data controls](https://developers.openai.com/api/docs/guides/your-data#default-usage-policies-by-endpoint).
 If LLM Guard is unavailable or failing, the security stage records that
 evaluator status and blocks the publish flow because security has no local

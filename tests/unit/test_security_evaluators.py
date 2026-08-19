@@ -297,7 +297,7 @@ def test_upskill_uses_official_openai_without_base_url(tmp_path, monkeypatch) ->
             baseline_avg_tokens=10,
             skilled_avg_tokens=20,
             token_delta=10,
-            models_tested=["gpt-4o-mini"],
+            models_tested=["gpt-4.1-mini"],
         )
 
     monkeypatch.setattr(upskill_eval, "_run_direct_openai_compatible_eval", fake_direct)
@@ -305,7 +305,7 @@ def test_upskill_uses_official_openai_without_base_url(tmp_path, monkeypatch) ->
     result = run_upskill_evaluation(skill_root=tmp_path, artifacts_dir=tmp_path / "artifacts")
 
     assert result.status == "scored"
-    assert captured["model"] == "gpt-4o-mini"
+    assert captured["model"] == "gpt-4.1-mini"
     assert captured["base_url"] is None
     assert captured["api_key"] == "test-openai-key"
 
@@ -341,7 +341,7 @@ def test_upskill_provider_error_is_unscored_and_blocks_pipeline(tmp_path, monkey
     monkeypatch.setenv("UPSKILL_TESTS_PATH", str(cases_path))
 
     result = SimpleNamespace(
-        model="gpt-4o-mini",
+        model="gpt-4.1-mini",
         baseline_success_rate=0.0,
         with_skill_success_rate=1.0,
         skill_lift=1.0,
@@ -435,7 +435,7 @@ def test_upskill_missing_token_usage_is_unscored(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("UPSKILL_TESTS_PATH", str(cases_path))
 
     result = SimpleNamespace(
-        model="gpt-4o-mini",
+        model="gpt-4.1-mini",
         baseline_success_rate=0.0,
         with_skill_success_rate=1.0,
         skill_lift=1.0,

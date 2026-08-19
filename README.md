@@ -287,7 +287,7 @@ generic passing cases.
 ```bash
 export OPENAI_API_KEY=...
 export UPSKILL_PROVIDER=openai
-export UPSKILL_MODELS=gpt-4o-mini
+export UPSKILL_MODELS=gpt-4.1-mini
 export UPSKILL_TESTS_PATH=/absolute/path/to/upskill-tests.json
 export UPSKILL_NO_BASELINE=false
 ```
@@ -306,7 +306,7 @@ quality evidence rather than an evaluator outage.
 
 For a live smoke check, run `aptitude-publisher inspect /path/to/skill` with
 the variables above, then verify the performance artifact records
-`status: scored`, `gpt-4o-mini`, nonzero token metrics, and no validation
+`status: scored`, `gpt-4.1-mini`, nonzero token metrics, and no validation
 errors. This sends skill and test content to OpenAI; see
 [OpenAI API data controls](https://developers.openai.com/api/docs/guides/your-data#default-usage-policies-by-endpoint).
 
