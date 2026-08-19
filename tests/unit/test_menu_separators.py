@@ -173,20 +173,27 @@ def test_build_inspect_plan_skips_publish_intent(monkeypatch, tmp_path: Path) ->
         version="0.1.0",
         intent="create_skill",
     )
-    selections: list[str] = []
+    events: list[str] = []
 
     def fake_select(title, options, **kwargs):
-        selections.append(title)
+        events.append(f"select:{title}")
         return options[0][1]
 
     monkeypatch.setattr(menu, "_discover_skills", lambda root: [skill])
-    monkeypatch.setattr(menu, "_print_step_separator", lambda: None)
+    monkeypatch.setattr(menu, "_print_step_separator", lambda: events.append("separator"))
     monkeypatch.setattr(menu, "_select", fake_select)
 
     plan = menu._build_publish_plan("inspect")
 
     assert plan.intent == "create_skill"
-    assert "Publish intent" not in selections
+    assert events == [
+        "separator",
+        "select:Skill source",
+        "separator",
+        "select:Local skill",
+        "separator",
+        "select:Inspection depth",
+    ]
 
 
 def test_failed_inspection_retries_the_inspection_flow(monkeypatch, tmp_path: Path) -> None:
@@ -220,6 +227,37 @@ def test_failed_inspection_retries_the_inspection_flow(monkeypatch, tmp_path: Pa
 
     assert menu.run_menu() == 0
     assert build_actions == ["inspect", "inspect"]
+
+
+def test_failed_inspection_separates_main_menu_return(monkeypatch, tmp_path: Path) -> None:
+    actions = iter(["inspect", "main_menu", "exit"])
+    separators: list[bool] = []
+
+    monkeypatch.setattr(menu, "_render_header", lambda: None)
+    monkeypatch.setattr(menu, "_select", lambda *args, **kwargs: next(actions))
+    monkeypatch.setattr(
+        menu,
+        "_build_publish_plan",
+        lambda action: menu.PublishPlan(
+            action=action,
+            skill_path=tmp_path,
+            slug=None,
+            intent="create_skill",
+            trust_tier="untrusted",
+            namespace="public",
+            artifact_origin="internal",
+            policy_pack_slug=None,
+            publisher_identity=None,
+            scan_profile="fast",
+        ),
+    )
+    monkeypatch.setattr(menu, "_print_step_separator", lambda: separators.append(True))
+    monkeypatch.setattr(menu, "_render_plan", lambda plan: None)
+    monkeypatch.setattr(menu, "_confirm", lambda *args, **kwargs: True)
+    monkeypatch.setattr(menu, "_execute_plan", lambda plan: 1)
+
+    assert menu.run_menu() == 0
+    assert len(separators) == 3
 
 
 def test_failed_inspection_labels_retry_as_inspection(monkeypatch) -> None:

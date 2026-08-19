@@ -163,6 +163,7 @@ def run_menu() -> int:
                 while result != 0:
                     failure_action = _select_failure_action(action)
                     if failure_action == "main_menu":
+                        _print_step_separator()
                         break
 
                     plan = _build_publish_plan(action)
@@ -323,9 +324,9 @@ def _build_publish_plan(action: Action) -> PublishPlan:
             },
             allow_back=True,
         )
-        _print_step_separator()
     else:
         intent = default_intent
+    _print_step_separator()
     scan_profile = _select(
         "Inspection depth",
         [
