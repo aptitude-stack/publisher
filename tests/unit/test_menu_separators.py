@@ -22,6 +22,18 @@ def test_render_step_separator_uses_stream_safe_glyphs() -> None:
     assert menu._render_step_separator(0, _AsciiStream()) == "-"
 
 
+def test_final_scores_use_security_and_maturity_thresholds() -> None:
+    low_security = menu._final_score_value("Security score", "5.0 / 10.0", 0.5)
+    passing_security = menu._final_score_value("Security score", "7.0 / 10.0", 0.7)
+    low_maturity = menu._final_score_value("Maturity score", "2.0 / 10.0", 0.2)
+    passing_maturity = menu._final_score_value("Maturity score", "3.0 / 10.0", 0.3)
+
+    assert low_security.style == "red"
+    assert passing_security.style == menu.THEME.text_body
+    assert low_maturity.style == "red"
+    assert passing_maturity.style == menu.THEME.text_body
+
+
 def test_interactive_pipeline_report_is_verbose_by_default(monkeypatch) -> None:
     output = StringIO()
     monkeypatch.setattr(menu, "CONSOLE", Console(file=output, width=120))

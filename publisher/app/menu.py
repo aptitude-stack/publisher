@@ -77,6 +77,10 @@ class CliTheme:
 
 
 THEME = CliTheme()
+_FINAL_SCORE_THRESHOLDS = {
+    "Security score": 0.70,
+    "Maturity score": 0.30,
+}
 WORDMARK = (
     "\n"
     "   ______          __          \n"
@@ -621,6 +625,10 @@ def _render_plan(plan: PublishPlan) -> None:
 
 def _render_pipeline_report(context: PublishContext) -> None:
     sections = _report_detail_sections(context)
+    final_scores = {
+        "Security score": context.security.score,
+        "Maturity score": context.metadata.maturity_score,
+    }
     for index, (title, rows) in enumerate(sections):
         if index:
             _print_step_separator()
@@ -628,8 +636,20 @@ def _render_pipeline_report(context: PublishContext) -> None:
         table.add_column(style=THEME.text_muted, no_wrap=True)
         table.add_column(style=THEME.text_body)
         for label, value in rows:
-            table.add_row(label, value)
+            score = final_scores.get(label) if title == "Final Scores" else None
+            table.add_row(label, _final_score_value(label, value, score))
         CONSOLE.print(_frame(table, title=title))
+
+
+def _final_score_value(label: str, value: str, score: float | None) -> Text:
+    """Highlight final scores below their display threshold."""
+    threshold = _FINAL_SCORE_THRESHOLDS.get(label)
+    style = (
+        "red"
+        if score is not None and threshold is not None and score < threshold
+        else THEME.text_body
+    )
+    return Text(value, style=style)
 
 
 def _render_bundle(context: PublishContext, bundle_bytes: bytes) -> None:
