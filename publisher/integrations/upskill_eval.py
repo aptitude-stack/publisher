@@ -102,6 +102,11 @@ def run_upskill_evaluation(*, skill_root: Path, artifacts_dir: Path) -> UpskillE
 
     try:
         command_env = os.environ.copy()
+        if tests_path is None:
+            command_env["PUBLISHER_UPSKILL_TEST_GEN_MODEL"] = _upskill_model_reference(
+                provider,
+                model[0] if model else model_name,
+            )
         if base_url and provider == "openai":
             command_env["OPENAI_API_BASE"] = base_url
         if api_key and provider == "openai":

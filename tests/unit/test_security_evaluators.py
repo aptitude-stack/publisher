@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import json
 from pathlib import Path
 import subprocess
@@ -317,6 +316,7 @@ def test_upskill_generates_openai_cases_with_pypi_cli_contract(tmp_path, monkeyp
     assert command[command.index("--model") + 1] == "openai.gpt-4.1-mini"
     assert "--verbose" in command
     assert "UPSKILL_CONFIG" not in captured["env"]
+    assert captured["env"]["PUBLISHER_UPSKILL_TEST_GEN_MODEL"] == "openai.gpt-4.1-mini"
     assert result.test_case_count == 2
     assert result.baseline_success_rate == 0.5
     assert result.skilled_success_rate == 1.0
@@ -326,33 +326,21 @@ def test_upskill_generates_openai_cases_with_pypi_cli_contract(tmp_path, monkeyp
     assert result.recommendations == ["keep skill"]
 
 
-def test_upskill_pypi_launcher_applies_model_before_generating_tests(monkeypatch) -> None:
+def test_upskill_pypi_launcher_applies_model_before_fastagent_startup(monkeypatch) -> None:
+    from importlib import resources
+
+    from fast_agent import FastAgent
+
     from publisher.integrations import upskill_cli
 
-    class Generator:
-        model = None
+    monkeypatch.setenv("PUBLISHER_UPSKILL_TEST_GEN_MODEL", "openai.gpt-4.1-mini")
+    fast = FastAgent("upskill-test", parse_cli_args=False)
+    cards = resources.files("upskill").joinpath("agent_cards")
+    with resources.as_file(cards) as cards_path:
+        loaded = upskill_cli.load_agents(fast, cards_path)
 
-        async def set_model(self, model):
-            self.model = model
-
-    generator = Generator()
-
-    async def fake_generate_tests(task, generator, model=None):
-        assert task == "test the skill"
-        assert generator.model == "openai.gpt-4.1-mini"
-        return ["generated"]
-
-    monkeypatch.setattr(upskill_cli, "upstream_generate_tests", fake_generate_tests)
-
-    result = asyncio.run(
-        upskill_cli.generate_tests(
-            "test the skill",
-            generator,
-            model="openai.gpt-4.1-mini",
-        )
-    )
-
-    assert result == ["generated"]
+    assert loaded == ["evaluator", "skill_gen", "test_gen"]
+    assert fast.agents["test_gen"]["config"].model == "openai.gpt-4.1-mini"
 
 
 def test_upskill_uses_explicit_cases_instead_of_generating_them(tmp_path, monkeypatch) -> None:

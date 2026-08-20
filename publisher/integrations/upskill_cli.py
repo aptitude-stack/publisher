@@ -2,21 +2,25 @@
 
 from __future__ import annotations
 
-from typing import Any
+import os
+from pathlib import Path
 
 from upskill import cli
-from upskill.generate import generate_tests as upstream_generate_tests
+
+_ORIGINAL_LOAD_AGENTS = cli.FastAgent.load_agents
 
 
-async def generate_tests(task: str, generator: Any, model: str | None = None) -> Any:
-    """Apply the CLI model ignored by Upskill 0.2.1's test generator."""
+def load_agents(fast: cli.FastAgent, path: str | Path) -> list[str]:
+    """Replace Upskill 0.2.1's hardcoded test-generation model before startup."""
+    loaded = _ORIGINAL_LOAD_AGENTS(fast, path)
+    model = os.environ.get("PUBLISHER_UPSKILL_TEST_GEN_MODEL")
     if model:
-        await generator.set_model(model)
-    return await upstream_generate_tests(task, generator, model=model)
+        fast.agents["test_gen"]["config"].model = model
+    return loaded
 
 
 def main() -> None:
-    cli.generate_tests = generate_tests
+    cli.FastAgent.load_agents = load_agents
     cli.main()
 
 
