@@ -189,7 +189,7 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "rich", specifier = ">=13.0" },
-    { name = "upskill", git = "https://github.com/huggingface/upskill.git?rev=20c0a13417a2616fab27dedda1d72284219fe422" },
+    { name = "upskill", specifier = "==0.2.1" },
     { name = "zstandard", specifier = ">=0.23,<0.24" },
 ]
 provides-extras = ["dev"]
@@ -2837,7 +2837,7 @@ wheels = [
 [[package]]
 name = "upskill"
 version = "0.2.1"
-source = { git = "https://github.com/huggingface/upskill.git?rev=20c0a13417a2616fab27dedda1d72284219fe422#20c0a13417a2616fab27dedda1d72284219fe422" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "click" },
     { name = "fast-agent-mcp" },
@@ -2845,6 +2845,10 @@ dependencies = [
     { name = "python-dotenv" },
     { name = "pyyaml" },
     { name = "rich" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e4/42/86fa0651fabe96dbb564f9ccaef2a7849f0c98ea40227a6e1cae49bbb339/upskill-0.2.1.tar.gz", hash = "sha256:86d47fb1e5cdbc858410ebbafe00cdcf7ea2e0b07cc2b2d627930bc6896903ce", size = 3064521, upload-time = "2026-01-28T15:53:08.846Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/88/56/4dff3caf3033ee4448f29e9176c936eec7bb20f8fb750d40cd544f03225d/upskill-0.2.1-py3-none-any.whl", hash = "sha256:c18938d4a0fdc2e5f462b6430c66db3a264db0caa04e728668316719b91ca896", size = 33237, upload-time = "2026-01-28T15:52:53.282Z" },
 ]
 
 [[package]]

@@ -604,7 +604,6 @@ def _render_plan(plan: PublishPlan) -> None:
     table.add_column(style=THEME.text_muted, no_wrap=True)
     table.add_column(style=THEME.text_body)
     table.add_row("Action", _action_label(plan.action))
-    table.add_row("CLI version", _publisher_cli_version())
     table.add_row("Skill", plan.skill_path.name)
     table.add_row("Skill version", "resolved during inspection")
     if plan.action == "publish":

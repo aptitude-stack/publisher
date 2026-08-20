@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 import subprocess
+import sys
 
 from publisher.app.pipeline import PublisherPipeline
 from publisher.integrations.llm_guard_security import (
@@ -285,11 +287,12 @@ def _write_upskill_batch_summary(runs_dir: Path, *, baseline_tokens: int = 40) -
     )
 
 
-def test_upskill_generates_openai_cases_when_no_file_is_configured(tmp_path, monkeypatch) -> None:
+def test_upskill_generates_openai_cases_with_pypi_cli_contract(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
     monkeypatch.setenv("UPSKILL_TESTS_PATH", "/absolute/path/to/upskill-tests.json")
     monkeypatch.delenv("UPSKILL_BASE_URL", raising=False)
     monkeypatch.delenv("UPSKILL_MODELS", raising=False)
+    monkeypatch.delenv("UPSKILL_CONFIG", raising=False)
     monkeypatch.delenv("PUBLISHER_UPSKILL_COMMAND", raising=False)
     monkeypatch.setenv("PUBLISHER_UPSKILL_VERBOSE", "true")
 
@@ -309,20 +312,11 @@ def test_upskill_generates_openai_cases_when_no_file_is_configured(tmp_path, mon
 
     assert result.status == "scored"
     command = captured["command"]
-    assert "--test-gen-model" in command
-    assert command[command.index("--test-gen-model") + 1] == "openai.gpt-4.1-mini"
+    assert command[:3] == [sys.executable, "-m", "publisher.integrations.upskill_cli"]
+    assert "--test-gen-model" not in command
     assert command[command.index("--model") + 1] == "openai.gpt-4.1-mini"
     assert "--verbose" in command
-    config_path = Path(captured["env"]["UPSKILL_CONFIG"])
-    assert config_path.read_text(encoding="utf-8") == (
-        "skill_generation_model: openai.gpt-4.1-mini\n"
-        "test_gen_model: openai.gpt-4.1-mini\n"
-        "eval_model: openai.gpt-4.1-mini\n"
-        f"fastagent_config: {config_path.parent / 'fastagent.config.yaml'}\n"
-    )
-    assert (config_path.parent / "fastagent.config.yaml").read_text(encoding="utf-8") == (
-        "default_model: openai.gpt-4.1-mini\n"
-    )
+    assert "UPSKILL_CONFIG" not in captured["env"]
     assert result.test_case_count == 2
     assert result.baseline_success_rate == 0.5
     assert result.skilled_success_rate == 1.0
@@ -330,6 +324,35 @@ def test_upskill_generates_openai_cases_when_no_file_is_configured(tmp_path, mon
     assert result.baseline_avg_tokens == 20
     assert result.skilled_avg_tokens == 10
     assert result.recommendations == ["keep skill"]
+
+
+def test_upskill_pypi_launcher_applies_model_before_generating_tests(monkeypatch) -> None:
+    from publisher.integrations import upskill_cli
+
+    class Generator:
+        model = None
+
+        async def set_model(self, model):
+            self.model = model
+
+    generator = Generator()
+
+    async def fake_generate_tests(task, generator, model=None):
+        assert task == "test the skill"
+        assert generator.model == "openai.gpt-4.1-mini"
+        return ["generated"]
+
+    monkeypatch.setattr(upskill_cli, "upstream_generate_tests", fake_generate_tests)
+
+    result = asyncio.run(
+        upskill_cli.generate_tests(
+            "test the skill",
+            generator,
+            model="openai.gpt-4.1-mini",
+        )
+    )
+
+    assert result == ["generated"]
 
 
 def test_upskill_uses_explicit_cases_instead_of_generating_them(tmp_path, monkeypatch) -> None:
