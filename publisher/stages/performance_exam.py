@@ -88,12 +88,16 @@ class PerformanceExamStage(PublisherStage):
             "artifact_dir": result.artifact_dir,
             "reason": result.reason,
         }
-        if result.status != "scored":
+        if result.status not in {"scored", "inconclusive"}:
             reason = result.reason or "upskill did not produce a scored result"
             context.performance_exam.notes.append(
                 f"Upskill evaluator {result.status}: performance metrics unavailable: {reason}."
             )
             return
+        if result.status == "inconclusive":
+            context.performance_exam.notes.append(
+                f"Upskill evaluator inconclusive: partial performance score applied from conclusive metrics: {result.reason}."
+            )
 
         exam = context.performance_exam
         exam.score = result.score

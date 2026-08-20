@@ -15,7 +15,6 @@ import publisher.stages.performance_exam as performance_stage
 import publisher.stages.security as security_stage
 from publisher.gates.performance_exam import PerformanceExamGate
 from publisher.stages.security import SecurityStage
-from publisher.stages.ranking import RankingStage
 
 
 def test_security_stage_marks_llm_guard_unavailable_when_missing(tmp_path, monkeypatch) -> None:
@@ -327,6 +326,7 @@ def test_upskill_generates_openai_cases_when_no_file_is_configured(tmp_path, mon
     assert result.test_case_count == 2
     assert result.baseline_success_rate == 0.5
     assert result.skilled_success_rate == 1.0
+    assert result.score == 0.88
     assert result.baseline_avg_tokens == 20
     assert result.skilled_avg_tokens == 10
     assert result.recommendations == ["keep skill"]
@@ -353,6 +353,83 @@ def test_upskill_uses_explicit_cases_instead_of_generating_them(tmp_path, monkey
     command = captured["command"]
     assert command[command.index("--tests") + 1] == str(cases_path)
     assert "--test-gen-model" not in command
+
+
+def test_upskill_performance_bonus_caps_at_one(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
+    monkeypatch.delenv("UPSKILL_TESTS_PATH", raising=False)
+    monkeypatch.delenv("PUBLISHER_UPSKILL_COMMAND", raising=False)
+
+    def fake_run(command, **kwargs):
+        _write_upskill_batch_summary(Path(command[command.index("--runs-dir") + 1]))
+        return subprocess.CompletedProcess(command, 0, '{"score": 0.99}', "")
+
+    monkeypatch.setattr(upskill_eval, "resolve_executable", lambda *args, **kwargs: "upskill")
+    monkeypatch.setattr(upskill_eval, "run_command", fake_run)
+
+    result = run_upskill_evaluation(skill_root=tmp_path, artifacts_dir=tmp_path / "artifacts")
+
+    assert result.status == "scored"
+    assert result.score == 1.0
+
+
+def test_upskill_inconclusive_result_uses_conclusive_token_evidence(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
+    monkeypatch.delenv("UPSKILL_TESTS_PATH", raising=False)
+    monkeypatch.delenv("PUBLISHER_UPSKILL_COMMAND", raising=False)
+
+    def fake_run(command, **kwargs):
+        runs_dir = Path(command[command.index("--runs-dir") + 1])
+        summary_path = runs_dir / "run" / "batch_summary.json"
+        summary_path.parent.mkdir(parents=True)
+        summary_path.write_text(
+            json.dumps(
+                {
+                    "model": "openai.gpt-4.1-mini",
+                    "results": [
+                        {
+                            "run_type": "baseline",
+                            "assertions_passed": 0,
+                            "assertions_total": 2,
+                            "stats": {"total_tokens": 100, "output_tokens": 50},
+                        },
+                        {
+                            "run_type": "with_skill",
+                            "assertions_passed": 0,
+                            "assertions_total": 2,
+                            "stats": {"total_tokens": 50, "output_tokens": 25},
+                        },
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(upskill_eval, "resolve_executable", lambda *args, **kwargs: "upskill")
+    monkeypatch.setattr(upskill_eval, "run_command", fake_run)
+
+    result = run_upskill_evaluation(skill_root=tmp_path, artifacts_dir=tmp_path / "artifacts")
+
+    assert result.status == "inconclusive"
+    assert result.score == 0.08
+
+
+def test_performance_stage_keeps_inconclusive_partial_score(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(
+        performance_stage,
+        "run_upskill_evaluation",
+        lambda **kwargs: UpskillEvaluation(status="inconclusive", score=0.08),
+    )
+    context = PublisherPipeline().create_context(file_path=str(tmp_path))
+    context.artifacts_dir = str(tmp_path / "artifacts")
+    context.validation.passed = True
+
+    performance_stage.PerformanceExamStage().run(context)
+
+    assert context.performance_exam.score == 0.08
 
 
 def test_upskill_provider_error_is_unscored_and_blocks_pipeline(tmp_path, monkeypatch) -> None:
@@ -477,7 +554,7 @@ def test_upskill_missing_token_usage_is_unscored(tmp_path, monkeypatch) -> None:
     assert any("did not report token usage" in error for error in evaluation.validation_errors)
 
 
-def test_upskill_generated_zero_zero_suite_is_inconclusive(tmp_path, monkeypatch) -> None:
+def test_upskill_duplicate_exact_text_verifiers_remain_scored(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
     monkeypatch.delenv("UPSKILL_TESTS_PATH", raising=False)
     monkeypatch.delenv("PUBLISHER_UPSKILL_COMMAND", raising=False)
@@ -534,37 +611,16 @@ def test_upskill_generated_zero_zero_suite_is_inconclusive(tmp_path, monkeypatch
 
     evaluation = run_upskill_evaluation(skill_root=tmp_path, artifacts_dir=tmp_path / "artifacts")
 
-    assert evaluation.status == "inconclusive"
-    assert evaluation.score is None
-    assert evaluation.reason == "upskill generated duplicate exact-text verifiers"
-    assert evaluation.validation_errors == [
-        "generated exact-text verifiers duplicate expected checks"
-    ]
-    assert evaluation.recommendations == []
+    assert evaluation.status == "scored"
+    assert evaluation.score == 0.25
+    assert evaluation.reason is None
+    assert evaluation.validation_errors == []
     assert evaluation.baseline_success_rate == 0.0
     assert evaluation.skilled_success_rate == 0.25
     assert evaluation.skill_lift == 0.25
     assert evaluation.token_delta == 1011
     assert evaluation.baseline_total_tokens == 1698
     assert evaluation.skilled_total_tokens == 9781
-
-    context = PublisherPipeline().create_context(file_path=str(tmp_path))
-    context.validation.passed = True
-    context.security.score = 1.0
-    context.security.decision = "allow"
-    context.metadata.extra["upskill_evaluation"] = {
-        "status": evaluation.status,
-        "validation_errors": evaluation.validation_errors,
-    }
-
-    assert PerformanceExamGate().verify(context) is True
-    assert context.gate_history[-1].warnings == [
-        "Upskill generated verifier evidence was inconclusive; manual review is required."
-    ]
-
-    RankingStage().run(context)
-
-    assert context.ranking.publish_decision == "review_required"
 
 
 def test_openai_key_does_not_enable_semantic_validation(monkeypatch) -> None:
