@@ -811,14 +811,22 @@ def _report_detail_sections(context) -> list[tuple[str, list[tuple[str, str]]]]:
         ("LLM Guard status", _evaluation_status(context, "llm_guard_security")),
         ("Findings", str(len(context.security.findings))),
     ]
+    risk_finding_sections = []
     for index, finding in enumerate(context.security.findings, start=1):
         severity = str(finding.get("severity", "unknown"))
-        check = str(finding.get("check", "security check"))
-        risk_rows.append((f"Finding {index}", f"{severity} · {check}"))
-        for label, key in (("Reason", "reason"), ("Location", "field"), ("Evidence", "evidence")):
+        check = str(finding.get("check", "security check")).removeprefix("llm_guard:")
+        finding_rows = []
+        for label, key in (
+            ("Why", "reason"),
+            ("Location", "field"),
+            ("Evidence", "evidence"),
+        ):
             value = finding.get(key)
             if value:
-                risk_rows.append((f"{label} {index}", str(value)))
+                finding_rows.append((label, str(value)))
+        risk_finding_sections.append(
+            (f"Finding {index} · {severity.upper()} · {check}", finding_rows)
+        )
     if risk_reason != "No blocking risk found.":
         risk_rows.append(("Summary", risk_reason))
 
@@ -895,6 +903,7 @@ def _report_detail_sections(context) -> list[tuple[str, list[tuple[str, str]]]]:
     return [
         ("Structure Validation", structure_rows),
         ("Risk Validation", risk_rows),
+        *risk_finding_sections,
         ("Performance Evaluation", quality_rows),
         ("Final Scores", final_score_rows),
     ]

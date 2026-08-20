@@ -148,6 +148,7 @@ def run_upskill_evaluation(*, skill_root: Path, artifacts_dir: Path) -> UpskillE
         validation_errors = [
             "generated exact-text verifiers passed no assertions despite non-empty model outputs"
         ]
+        parsed["score"] = None
         parsed["passed"] = None
         parsed["recommendations"] = []
     elif status == "scored":
@@ -155,10 +156,8 @@ def run_upskill_evaluation(*, skill_root: Path, artifacts_dir: Path) -> UpskillE
         if validation_errors:
             status = "failed"
             reason = "upskill did not produce complete scored performance evidence"
-    if status in {"scored", "inconclusive"} and isinstance(
-        parsed.get("score"), (int, float)
-    ):
-        parsed["score"] = round(min(1.0, parsed["score"] + 0.03), 2)
+    if status == "scored" and isinstance(parsed.get("score"), (int, float)):
+        parsed["score"] = round(min(1.0, parsed["score"] + 0.30), 2)
     return UpskillEvaluation(
         status=status,
         score=parsed.get("score"),

@@ -320,7 +320,7 @@ def test_upskill_generates_openai_cases_with_pypi_cli_contract(tmp_path, monkeyp
     assert result.test_case_count == 2
     assert result.baseline_success_rate == 0.5
     assert result.skilled_success_rate == 1.0
-    assert result.score == 0.88
+    assert result.score == 1.0
     assert result.baseline_avg_tokens == 20
     assert result.skilled_avg_tokens == 10
     assert result.recommendations == ["keep skill"]
@@ -341,6 +341,62 @@ def test_upskill_pypi_launcher_applies_model_before_fastagent_startup(monkeypatc
 
     assert loaded == ["evaluator", "skill_gen", "test_gen"]
     assert fast.agents["test_gen"]["config"].model == "openai.gpt-4.1-mini"
+
+
+def test_upskill_pypi_launcher_constrains_generated_exact_text_checks(monkeypatch) -> None:
+    from upskill import generate
+
+    from publisher.integrations import upskill_cli
+
+    original_prompt = generate.TEST_GENERATION_PROMPT
+    monkeypatch.setattr(generate, "TEST_GENERATION_PROMPT", original_prompt)
+    monkeypatch.setattr(
+        upskill_cli.cli.FastAgent,
+        "load_agents",
+        upskill_cli._ORIGINAL_LOAD_AGENTS,
+    )
+    monkeypatch.setattr(
+        upskill_cli.cli,
+        "generate_tests",
+        upskill_cli._ORIGINAL_GENERATE_TESTS,
+    )
+    captured: dict[str, str] = {}
+    monkeypatch.setattr(
+        upskill_cli.cli,
+        "main",
+        lambda: captured.update(prompt=generate.TEST_GENERATION_PROMPT),
+    )
+
+    upskill_cli.main()
+
+    assert (
+        "Use exactly two short, essential, non-synonymous expected strings per test case."
+        in captured["prompt"]
+    )
+
+
+def test_upskill_pypi_launcher_caps_generated_checks_at_two(monkeypatch) -> None:
+    import asyncio
+
+    from upskill.models import ExpectedSpec, TestCase
+
+    from publisher.integrations import upskill_cli
+
+    async def generate_many_checks(*args, **kwargs):
+        return [
+            TestCase(
+                input="Delegate independent work.",
+                expected=ExpectedSpec(
+                    contains=["delegate", "parallel", "coordinate", "independent"]
+                ),
+            )
+        ]
+
+    monkeypatch.setattr(upskill_cli, "_ORIGINAL_GENERATE_TESTS", generate_many_checks)
+
+    cases = asyncio.run(upskill_cli.generate_tests("task", generator=object()))
+
+    assert cases[0].expected.contains == ["delegate", "parallel"]
 
 
 def test_upskill_uses_explicit_cases_instead_of_generating_them(tmp_path, monkeypatch) -> None:
@@ -384,7 +440,25 @@ def test_upskill_performance_bonus_caps_at_one(tmp_path, monkeypatch) -> None:
     assert result.score == 1.0
 
 
-def test_upskill_inconclusive_result_uses_conclusive_token_evidence(
+def test_upskill_performance_bonus_adds_three_final_score_units(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
+    monkeypatch.delenv("UPSKILL_TESTS_PATH", raising=False)
+    monkeypatch.delenv("PUBLISHER_UPSKILL_COMMAND", raising=False)
+
+    def fake_run(command, **kwargs):
+        _write_upskill_batch_summary(Path(command[command.index("--runs-dir") + 1]))
+        return subprocess.CompletedProcess(command, 0, '{"score": 0.5}', "")
+
+    monkeypatch.setattr(upskill_eval, "resolve_executable", lambda *args, **kwargs: "upskill")
+    monkeypatch.setattr(upskill_eval, "run_command", fake_run)
+
+    result = run_upskill_evaluation(skill_root=tmp_path, artifacts_dir=tmp_path / "artifacts")
+
+    assert result.status == "scored"
+    assert result.score == 0.8
+
+
+def test_upskill_inconclusive_result_is_unscored(
     tmp_path, monkeypatch
 ) -> None:
     monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
@@ -425,10 +499,10 @@ def test_upskill_inconclusive_result_uses_conclusive_token_evidence(
     result = run_upskill_evaluation(skill_root=tmp_path, artifacts_dir=tmp_path / "artifacts")
 
     assert result.status == "inconclusive"
-    assert result.score == 0.08
+    assert result.score is None
 
 
-def test_performance_stage_keeps_inconclusive_partial_score(tmp_path, monkeypatch) -> None:
+def test_performance_stage_rejects_inconclusive_partial_score(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(
         performance_stage,
         "run_upskill_evaluation",
@@ -440,7 +514,7 @@ def test_performance_stage_keeps_inconclusive_partial_score(tmp_path, monkeypatc
 
     performance_stage.PerformanceExamStage().run(context)
 
-    assert context.performance_exam.score == 0.08
+    assert context.performance_exam.score is None
 
 
 def test_upskill_provider_error_is_unscored_and_blocks_pipeline(tmp_path, monkeypatch) -> None:
@@ -623,7 +697,7 @@ def test_upskill_duplicate_exact_text_verifiers_remain_scored(tmp_path, monkeypa
     evaluation = run_upskill_evaluation(skill_root=tmp_path, artifacts_dir=tmp_path / "artifacts")
 
     assert evaluation.status == "scored"
-    assert evaluation.score == 0.25
+    assert evaluation.score == 0.52
     assert evaluation.reason is None
     assert evaluation.validation_errors == []
     assert evaluation.baseline_success_rate == 0.0

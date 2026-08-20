@@ -96,11 +96,11 @@ class PerformanceExamStage(PublisherStage):
             return
         if result.status == "inconclusive":
             context.performance_exam.notes.append(
-                f"Upskill evaluator inconclusive: partial performance score applied from conclusive metrics: {result.reason}."
+                f"Upskill evaluator inconclusive: performance was not scored: {result.reason}."
             )
 
         exam = context.performance_exam
-        exam.score = result.score
+        exam.score = result.score if result.status == "scored" else None
         exam.passed = bool(result.passed)
         exam.test_case_count = result.test_case_count or 0
         exam.models_tested = result.models_tested
