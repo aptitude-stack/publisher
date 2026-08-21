@@ -108,9 +108,9 @@ def test_interactive_pipeline_report_is_verbose_by_default(monkeypatch) -> None:
     assert "Skill Identity" not in rendered
 
 
-def test_render_plan_shows_compact_extracted_metadata(monkeypatch, tmp_path: Path) -> None:
+def test_render_plan_matches_resolver_review_layout(monkeypatch, tmp_path: Path) -> None:
     output = StringIO()
-    monkeypatch.setattr(menu, "CONSOLE", Console(file=output, width=120))
+    monkeypatch.setattr(menu, "CONSOLE", Console(file=output, width=200))
     skill_path = tmp_path / "python-patterns"
     plan = menu.PublishPlan(
         action="inspect",
@@ -131,24 +131,21 @@ def test_render_plan_shows_compact_extracted_metadata(monkeypatch, tmp_path: Pat
     menu._render_plan(plan)
 
     rendered = output.getvalue()
-    assert "Name" in rendered
-    assert "brainstorming" in rendered
-    assert "Version" in rendered
-    assert "0.1.0" in rendered
-    assert "License" in rendered
-    assert "MIT" in rendered
+    assert "Selected" in rendered
     assert "[bold]brainstorming[/bold]" in rendered
     assert "[red]0.1.0[/red]" in rendered
-    assert "[link=https://example.test]MIT[/link]" in rendered
-    assert "python-patterns" not in rendered
-    assert str(skill_path) not in rendered
+    assert "Action" in rendered
     assert "Inspect" in rendered
-    assert "Intent" not in rendered
-    assert "Skill version" not in rendered
-    assert "resolved during inspection" not in rendered
-    assert "Runtime" not in rendered
-    assert "Trust" not in rendered
-    assert "Origin" not in rendered
+    assert "Scope" in rendered
+    assert "public" in rendered
+    assert "Source" in rendered
+    assert str(skill_path) in rendered
+    assert "Execution Steps" in rendered
+    assert "1. discovery → inspect skill files" in rendered
+    assert "9. compression → prepare bundle contents" in rendered
+    assert "Name" not in rendered
+    assert "Version" not in rendered
+    assert "License" not in rendered
 
 
 def test_render_plan_omits_missing_license(monkeypatch, tmp_path: Path) -> None:
@@ -174,7 +171,7 @@ def test_render_plan_omits_missing_license(monkeypatch, tmp_path: Path) -> None:
     assert "License" not in output.getvalue()
 
 
-def test_render_publish_plan_shows_intent(monkeypatch, tmp_path: Path) -> None:
+def test_render_publish_plan_lists_bundle_and_upload_steps(monkeypatch, tmp_path: Path) -> None:
     output = StringIO()
     monkeypatch.setattr(menu, "CONSOLE", Console(file=output, width=120))
     plan = menu.PublishPlan(
@@ -195,12 +192,13 @@ def test_render_publish_plan_shows_intent(monkeypatch, tmp_path: Path) -> None:
     menu._render_plan(plan)
 
     rendered = output.getvalue()
-    assert "Intent" in rendered
-    assert "publish_version" in rendered
+    assert "10. bundle → build immutable artifact" in rendered
+    assert "11. registry → upload after confirmation" in rendered
+    assert "Intent" not in rendered
 
 
 def test_frame_title_uses_muted_gray_style() -> None:
-    frame = menu._frame("body", title="Publish Plan")
+    frame = menu._frame("body", title="Review Plan")
 
     assert frame.title.style == menu.THEME.text_muted
 

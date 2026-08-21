@@ -11,7 +11,7 @@ import sys
 from typing import Any, Literal, Sequence, TypeVar
 
 from rich import box
-from rich.console import Console
+from rich.console import Console, Group
 from rich.panel import Panel
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
 from rich.table import Table
@@ -618,25 +618,39 @@ def _run_pipeline(plan: PublishPlan) -> PublishContext:
 
 
 def _render_plan(plan: PublishPlan) -> None:
-    table = Table.grid(expand=True, padding=(0, 2))
-    table.add_column(style=THEME.text_muted, no_wrap=True)
-    table.add_column(style=THEME.text_body)
-    table.add_row("Action", _action_label(plan.action))
-    table.add_row("Name", Text(plan.skill_name or plan.skill_path.name))
-    table.add_row("Version", Text(plan.skill_version or "unknown"))
+    steps = (
+        ("discovery", "inspect skill files"),
+        ("identity", "derive registry identity"),
+        ("metadata", "collect skill metadata"),
+        ("security", "scan skill content"),
+        ("validation", "validate SKILL.md"),
+        ("performance_exam", "evaluate skill performance"),
+        ("ranking", "calculate publish decision"),
+        ("delivery", "prepare registry payload"),
+        ("compression", "prepare bundle contents"),
+    )
     if plan.action == "publish":
-        table.add_row("Intent", plan.intent)
-    table.add_row("Inspection depth", _scan_profile_label(plan.scan_profile))
-    table.add_row("Namespace", plan.namespace)
-    if plan.license:
-        table.add_row("License", Text(plan.license))
-    if plan.slug:
-        table.add_row("Slug override", plan.slug)
-    if plan.policy_pack_slug:
-        table.add_row("Policy pack", plan.policy_pack_slug)
-    if plan.publisher_identity:
-        table.add_row("Publisher", plan.publisher_identity)
-    CONSOLE.print(_frame(table, title="Publish Plan"))
+        steps += (
+            ("bundle", "build immutable artifact"),
+            ("registry", "upload after confirmation"),
+        )
+    body = Group(
+        Text(
+            f"{'Selected':<10} : {plan.skill_name or plan.skill_path.name}@"
+            f"{plan.skill_version or 'unknown'}",
+            style=THEME.text_primary,
+        ),
+        Text(f"{'Action':<10} : {_action_label(plan.action)}", style=THEME.text_detail),
+        Text(f"{'Scope':<10} : {plan.namespace}", style=THEME.text_muted),
+        Text(f"{'Source':<10} : {plan.skill_path}", style=THEME.text_muted),
+        Text(""),
+        Text("Execution Steps", style=THEME.text_detail),
+        *[
+            Text(f"{index}. {stage} → {action}", style=THEME.text_muted)
+            for index, (stage, action) in enumerate(steps, start=1)
+        ],
+    )
+    CONSOLE.print(_frame(body, title="Review Plan"))
     CONSOLE.print()
 
 
