@@ -22,6 +22,21 @@ def test_render_step_separator_uses_stream_safe_glyphs() -> None:
     assert menu._render_step_separator(0, _AsciiStream()) == "-"
 
 
+def test_header_styles_the_complete_version_consistently(monkeypatch) -> None:
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    output = StringIO()
+    monkeypatch.setattr(
+        menu,
+        "CONSOLE",
+        Console(file=output, width=120, force_terminal=True, color_system="truecolor"),
+    )
+    monkeypatch.setattr(menu, "_publisher_cli_version", lambda: "0.1.9")
+
+    menu._render_header()
+
+    assert "\x1b[1;36m0.1.9\x1b[0m" in output.getvalue()
+
+
 def test_final_scores_use_security_and_maturity_thresholds() -> None:
     low_security = menu._final_score_value("Security score", "5.0 / 10.0", 0.5)
     passing_security = menu._final_score_value("Security score", "7.0 / 10.0", 0.7)
@@ -93,7 +108,7 @@ def test_interactive_pipeline_report_is_verbose_by_default(monkeypatch) -> None:
     assert "Skill Identity" not in rendered
 
 
-def test_render_plan_shows_skill_folder_name_only(monkeypatch, tmp_path: Path) -> None:
+def test_render_plan_shows_compact_extracted_metadata(monkeypatch, tmp_path: Path) -> None:
     output = StringIO()
     monkeypatch.setattr(menu, "CONSOLE", Console(file=output, width=120))
     skill_path = tmp_path / "python-patterns"
@@ -108,15 +123,133 @@ def test_render_plan_shows_skill_folder_name_only(monkeypatch, tmp_path: Path) -
         policy_pack_slug=None,
         publisher_identity=None,
         scan_profile="fast",
+        skill_name="[bold]brainstorming[/bold]",
+        skill_version="[red]0.1.0[/red]",
+        license="[link=https://example.test]MIT[/link]",
     )
 
     menu._render_plan(plan)
 
     rendered = output.getvalue()
-    assert "python-patterns" in rendered
+    assert "Name" in rendered
+    assert "brainstorming" in rendered
+    assert "Version" in rendered
+    assert "0.1.0" in rendered
+    assert "License" in rendered
+    assert "MIT" in rendered
+    assert "[bold]brainstorming[/bold]" in rendered
+    assert "[red]0.1.0[/red]" in rendered
+    assert "[link=https://example.test]MIT[/link]" in rendered
+    assert "python-patterns" not in rendered
     assert str(skill_path) not in rendered
     assert "Inspect" in rendered
     assert "Intent" not in rendered
+    assert "Skill version" not in rendered
+    assert "resolved during inspection" not in rendered
+    assert "Runtime" not in rendered
+    assert "Trust" not in rendered
+    assert "Origin" not in rendered
+
+
+def test_render_plan_omits_missing_license(monkeypatch, tmp_path: Path) -> None:
+    output = StringIO()
+    monkeypatch.setattr(menu, "CONSOLE", Console(file=output, width=120))
+    plan = menu.PublishPlan(
+        action="inspect",
+        skill_path=tmp_path,
+        slug=None,
+        intent="create_skill",
+        trust_tier="untrusted",
+        namespace="public",
+        artifact_origin="internal",
+        policy_pack_slug=None,
+        publisher_identity=None,
+        scan_profile="fast",
+        skill_name="brainstorming",
+        skill_version="0.1.0",
+    )
+
+    menu._render_plan(plan)
+
+    assert "License" not in output.getvalue()
+
+
+def test_render_publish_plan_shows_intent(monkeypatch, tmp_path: Path) -> None:
+    output = StringIO()
+    monkeypatch.setattr(menu, "CONSOLE", Console(file=output, width=120))
+    plan = menu.PublishPlan(
+        action="publish",
+        skill_path=tmp_path,
+        slug=None,
+        intent="publish_version",
+        trust_tier="untrusted",
+        namespace="public",
+        artifact_origin="internal",
+        policy_pack_slug=None,
+        publisher_identity=None,
+        scan_profile="fast",
+        skill_name="brainstorming",
+        skill_version="0.1.0",
+    )
+
+    menu._render_plan(plan)
+
+    rendered = output.getvalue()
+    assert "Intent" in rendered
+    assert "publish_version" in rendered
+
+
+def test_frame_title_uses_muted_gray_style() -> None:
+    frame = menu._frame("body", title="Publish Plan")
+
+    assert frame.title.style == menu.THEME.text_muted
+
+
+def test_read_menu_skill_extracts_compact_plan_metadata(tmp_path: Path) -> None:
+    skill_file = tmp_path / "SKILL.md"
+    skill_file.write_text(
+        """---
+name: brainstorming
+license: MIT
+metadata:
+  version: 0.1.0
+  intent: create_skill
+---
+
+# Brainstorming
+""",
+        encoding="utf-8",
+    )
+
+    skill = menu._read_menu_skill(skill_file)
+
+    assert skill is not None
+    assert skill.name == "brainstorming"
+    assert skill.version == "0.1.0"
+    assert skill.license == "MIT"
+
+
+def test_read_menu_skill_uses_canonical_yaml_semantics(tmp_path: Path) -> None:
+    skill_file = tmp_path / "SKILL.md"
+    skill_file.write_text(
+        """---
+name: brainstorming
+license: null
+metadata:
+  version: 0.1.0 # release
+  intent: create_skill
+---
+
+# Brainstorming
+""",
+        encoding="utf-8",
+    )
+
+    skill = menu._read_menu_skill(skill_file)
+
+    assert skill is not None
+    assert skill.version == "0.1.0"
+    assert skill.license is None
 
 
 def test_wizard_pipeline_enables_verbose_upskill(monkeypatch, tmp_path: Path) -> None:
@@ -164,6 +297,7 @@ def test_build_publish_plan_prints_separators_between_decisions(
         name="example",
         version="0.1.0",
         intent="create_skill",
+        license="MIT",
     )
     events: list[str] = []
 
@@ -183,6 +317,9 @@ def test_build_publish_plan_prints_separators_between_decisions(
     plan = menu._build_publish_plan("publish")
 
     assert plan.skill_path == tmp_path.resolve()
+    assert plan.skill_name == "example"
+    assert plan.skill_version == "0.1.0"
+    assert plan.license == "MIT"
     assert events == [
         "separator",
         "select:Skill source",

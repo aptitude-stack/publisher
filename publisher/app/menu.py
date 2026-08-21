@@ -37,6 +37,7 @@ from publisher.app.cli import (
 )
 from publisher.app.pipeline import PublisherPipeline
 from publisher.domain.models import PublishContext
+from publisher.frontmatter import parse_skill_markdown
 from publisher.registry.client import (
     check_relationship_references,
     publish_to_registry,
@@ -107,6 +108,7 @@ class MenuSkill:
     name: str
     version: str
     intent: str
+    license: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,6 +125,9 @@ class PublishPlan:
     policy_pack_slug: str | None
     publisher_identity: str | None
     scan_profile: ScanProfile
+    skill_name: str | None = None
+    skill_version: str | None = None
+    license: str | None = None
 
 
 def run_menu() -> int:
@@ -219,8 +224,14 @@ def _flow_descriptions() -> dict[Action, str]:
 def _render_header() -> None:
     CONSOLE.print(Text(WORDMARK, style=THEME.text_primary))
     CONSOLE.print(
-        f"Aptitude Publisher {_publisher_cli_version()} - "
-        "Review-first CLI for validating and publishing skills."
+        Text.assemble(
+            ("Aptitude Publisher ", THEME.text_primary),
+            (_publisher_cli_version(), "repr.number"),
+            (
+                " - Review-first CLI for validating and publishing skills.",
+                THEME.text_muted,
+            ),
+        )
     )
     CONSOLE.print("─" * CONSOLE.width, style=THEME.border_secondary)
     CONSOLE.print()
@@ -269,7 +280,7 @@ def _frame(
 
     return Panel(
         renderable,
-        title=Text(title, style=THEME.text_primary),
+        title=Text(title, style=THEME.text_muted),
         subtitle=subtitle,
         border_style=border_style or THEME.border_secondary,
         box=_panel_box_for_stream(sys.stdout),
@@ -358,6 +369,9 @@ def _build_publish_plan(action: Action) -> PublishPlan:
         policy_pack_slug=None,
         publisher_identity=None,
         scan_profile=scan_profile,
+        skill_name=skill.name if skill is not None else None,
+        skill_version=skill.version if skill is not None else None,
+        license=skill.license if skill is not None else None,
     )
 
 
@@ -386,11 +400,15 @@ def _read_menu_skill(skill_file: Path) -> MenuSkill | None:
     metadata = frontmatter.get("metadata", {})
     if not isinstance(metadata, dict):
         metadata = {}
+    license_value = frontmatter.get("license")
     return MenuSkill(
         path=skill_file.parent,
         name=str(frontmatter.get("name") or skill_file.parent.name),
         version=str(metadata.get("version") or "1.0.0"),
         intent=str(metadata.get("intent") or "create_skill"),
+        license=license_value.strip()
+        if isinstance(license_value, str) and license_value.strip()
+        else None,
     )
 
 
@@ -604,14 +622,14 @@ def _render_plan(plan: PublishPlan) -> None:
     table.add_column(style=THEME.text_muted, no_wrap=True)
     table.add_column(style=THEME.text_body)
     table.add_row("Action", _action_label(plan.action))
-    table.add_row("Skill", plan.skill_path.name)
-    table.add_row("Skill version", "resolved during inspection")
+    table.add_row("Name", Text(plan.skill_name or plan.skill_path.name))
+    table.add_row("Version", Text(plan.skill_version or "unknown"))
     if plan.action == "publish":
         table.add_row("Intent", plan.intent)
     table.add_row("Inspection depth", _scan_profile_label(plan.scan_profile))
-    table.add_row("Trust", plan.trust_tier)
     table.add_row("Namespace", plan.namespace)
-    table.add_row("Origin", plan.artifact_origin)
+    if plan.license:
+        table.add_row("License", Text(plan.license))
     if plan.slug:
         table.add_row("Slug override", plan.slug)
     if plan.policy_pack_slug:
@@ -1089,50 +1107,8 @@ def _scan_profile_label(profile: ScanProfile) -> str:
 
 def _read_frontmatter(skill_file: Path) -> dict[str, Any]:
     content = skill_file.read_text(encoding="utf-8")
-    if not content.startswith("---\n"):
+    try:
+        frontmatter, _body = parse_skill_markdown(content)
+    except ValueError:
         return {}
-    closing_index = content.find("\n---\n", 4)
-    if closing_index == -1:
-        return {}
-    return _parse_simple_yaml(content[4:closing_index])
-
-
-def _parse_simple_yaml(frontmatter_text: str) -> dict[str, Any]:
-    result: dict[str, Any] = {}
-    current_nested_key: str | None = None
-    for raw_line in frontmatter_text.splitlines():
-        if not raw_line.strip() or raw_line.lstrip().startswith("#"):
-            continue
-        if raw_line.startswith("  ") and current_nested_key:
-            stripped = raw_line.strip()
-            if ":" not in stripped:
-                continue
-            nested_key, nested_value = stripped.split(":", 1)
-            nested_map = result.setdefault(current_nested_key, {})
-            if isinstance(nested_map, dict):
-                nested_map[nested_key.strip()] = _parse_scalar(nested_value.strip())
-            continue
-
-        current_nested_key = None
-        if ":" not in raw_line:
-            continue
-        key, value = raw_line.split(":", 1)
-        key = key.strip()
-        value = value.strip()
-        if not value:
-            result[key] = {}
-            current_nested_key = key
-            continue
-        result[key] = _parse_scalar(value)
-    return result
-
-
-def _parse_scalar(value: str) -> Any:
-    if value.startswith("[") and value.endswith("]"):
-        inner = value[1:-1].strip()
-        if not inner:
-            return []
-        return [item.strip().strip("'\"") for item in inner.split(",")]
-    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
-        return value[1:-1]
-    return value
+    return frontmatter

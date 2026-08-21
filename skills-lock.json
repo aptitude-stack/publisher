@@ -1,6 +1,12 @@
 {
   "version": 1,
   "skills": {
+    "codex-pet": {
+      "source": "prime-skills/runcomfy-agent-skills",
+      "sourceType": "github",
+      "skillPath": "codex-pet/SKILL.md",
+      "computedHash": "52a44313ae31be2701301aa9881864ab603f5357ebe9c02130dd358c90c22b21"
+    },
     "python-mcp-server-generator": {
       "source": "github/awesome-copilot",
       "sourceType": "github",

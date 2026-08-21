@@ -1,6 +1,6 @@
 [project]
 name = "aptitude-publisher"
-version = "0.1.9"
+version = "0.1.11"
 description = "Publisher CLI for evaluating and publishing Aptitude skills"
 readme = "PYPI.md"
 requires-python = ">=3.13.5,<3.14"
