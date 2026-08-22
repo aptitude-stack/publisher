@@ -9,7 +9,7 @@ from rich.console import Console
 
 from publisher.app import menu
 from publisher.domain.models import PublishContext, SkillSource
-from publisher.registry.client import ExistingSkill, ExistingSkillVersion
+from publisher.registry.client import ExistingSkill, ExistingSkillVersion, RegistryPublishResult
 
 
 class _AsciiStream:
@@ -47,6 +47,31 @@ def test_final_scores_use_security_and_maturity_thresholds() -> None:
     assert passing_security.style == menu.THEME.text_body
     assert low_maturity.style == "red"
     assert passing_maturity.style == menu.THEME.text_body
+
+
+def test_publish_summary_groups_scores_bundle_and_relationship_alert(monkeypatch) -> None:
+    output = StringIO()
+    monkeypatch.setattr(menu, "CONSOLE", Console(file=output, width=120))
+    monkeypatch.setenv("APTITUDE_PUBLISH_TOKEN", "publish-token")
+    monkeypatch.setattr(menu, "check_relationship_references", lambda **kwargs: [])
+    context = PublishContext(source=SkillSource(file_path="skills/example"))
+    context.inventory.skill_root = "skills/example"
+    context.identity.slug = "example"
+    context.identity.version = "0.1.0"
+    context.security.score = 1.0
+    context.metadata.maturity_score = 0.57
+    context.ranking.publish_decision = "allow"
+    context.delivery_payload.relationships = {"depends_on": [{"slug": "base"}]}
+
+    menu._render_publish_summary(context, b"bundle")
+
+    rendered = output.getvalue()
+    assert "Publish Summary" in rendered
+    assert "Final Scores" in rendered
+    assert "Bundle" in rendered
+    assert "Relationship Alerts" in rendered
+    assert "All referenced relationship targets were found." in rendered
+    assert rendered.count("╭") == 1
 
 
 def test_interactive_pipeline_report_is_verbose_by_default(monkeypatch) -> None:
@@ -141,8 +166,9 @@ def test_render_plan_matches_resolver_review_layout(monkeypatch, tmp_path: Path)
     assert "Source" in rendered
     assert str(skill_path) in rendered
     assert "Execution Steps" in rendered
-    assert "1. discovery → inspect skill files" in rendered
-    assert "9. compression → prepare bundle contents" in rendered
+    assert "1. discovery → inspect skill files and derive identity" in rendered
+    assert "4. delivery → prepare registry payload and bundle contents" in rendered
+    assert "2. identity → derive registry identity" not in rendered
     assert "Name" not in rendered
     assert "Version" not in rendered
     assert "License" not in rendered
@@ -192,8 +218,8 @@ def test_render_publish_plan_lists_bundle_and_upload_steps(monkeypatch, tmp_path
     menu._render_plan(plan)
 
     rendered = output.getvalue()
-    assert "10. bundle → build immutable artifact" in rendered
-    assert "11. registry → upload after confirmation" in rendered
+    assert "5. registry → upload after confirmation" in rendered
+    assert "10. bundle → build immutable artifact" not in rendered
     assert "Intent" not in rendered
 
 
@@ -566,6 +592,56 @@ def test_publish_plan_requires_token_before_pipeline(monkeypatch, tmp_path: Path
     )
 
     assert menu._execute_plan(plan) == 1
+
+
+def test_successful_publish_leaves_next_menu_separator_to_the_wizard(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    context = PublishContext(source=SkillSource(file_path=str(tmp_path)))
+    context.delivery_payload.slug = "example"
+    context.delivery_payload.version = "0.1.0"
+    context.delivery_payload.intent = "create_skill"
+    context.delivery_payload.metadata["name"] = "Example"
+    context.delivery_payload.governance["trust_tier"] = "untrusted"
+    context.ranking.publish_decision = "allow"
+    separators: list[bool] = []
+
+    @contextmanager
+    def no_activity(*args, **kwargs):
+        yield
+
+    monkeypatch.setenv("APTITUDE_PUBLISH_TOKEN", "publish-token")
+    monkeypatch.setattr(menu, "_activity", no_activity)
+    monkeypatch.setattr(menu, "_render_existing_slug_preflight_block_if_needed", lambda **kwargs: False)
+    monkeypatch.setattr(menu, "_run_pipeline", lambda plan: context)
+    monkeypatch.setattr(menu, "_render_pipeline_report", lambda context: None)
+    monkeypatch.setattr(menu, "build_bundle_bytes", lambda context: b"bundle")
+    monkeypatch.setattr(menu, "_render_bundle", lambda context, bundle: None)
+    monkeypatch.setattr(menu, "_confirm", lambda *args, **kwargs: True)
+    monkeypatch.setattr(
+        menu,
+        "publish_to_registry",
+        lambda **kwargs: RegistryPublishResult(status_code=201, body={}, request_id=None),
+    )
+    monkeypatch.setattr(menu, "_render_registry_result", lambda result: None)
+    monkeypatch.setattr(menu, "_print_step_separator", lambda: separators.append(True))
+
+    plan = menu.PublishPlan(
+        action="publish",
+        skill_path=tmp_path,
+        slug=None,
+        intent="create_skill",
+        trust_tier="untrusted",
+        namespace="public",
+        artifact_origin="internal",
+        policy_pack_slug=None,
+        publisher_identity=None,
+        scan_profile="fast",
+    )
+
+    assert menu._execute_plan(plan) == 0
+    assert separators == []
 
 
 def test_publish_plan_blocks_existing_create_slug_before_pipeline(

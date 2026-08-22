@@ -17,7 +17,7 @@ def test_resolve_executable_finds_windows_venv_scripts_exe(tmp_path, monkeypatch
     upskill.chmod(0o755)
 
     monkeypatch.setenv("PATH", "")
-    monkeypatch.setattr(external_tools.os, "name", "nt")
+    monkeypatch.setattr(external_tools, "_is_windows", lambda: True, raising=False)
     monkeypatch.setattr(external_tools.sys, "executable", str(tmp_path / "python.exe"))
 
     assert resolve_executable("upskill", start=skill_root) == str(upskill)

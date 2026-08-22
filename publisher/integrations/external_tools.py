@@ -44,9 +44,13 @@ def resolve_executable(name: str, *, start: Path) -> str | None:
 
 def _executable_candidates(directory: Path, name: str) -> list[Path]:
     candidates = [directory / name]
-    if os.name == "nt" and not name.lower().endswith(".exe"):
+    if _is_windows() and not name.lower().endswith(".exe"):
         candidates.append(directory / f"{name}.exe")
     return candidates
+
+
+def _is_windows() -> bool:
+    return os.name == "nt"
 
 
 def run_command(

@@ -14,6 +14,7 @@ from rich import box
 from rich.console import Console, Group
 from rich.panel import Panel
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
+from rich.rule import Rule
 from rich.table import Table
 from rich.text import Text
 
@@ -547,7 +548,10 @@ def _execute_plan(plan: PublishPlan) -> int:
 
     with _activity("Running publisher pipeline"):
         context = _run_pipeline(plan)
-    _render_pipeline_report(context)
+    if plan.action == "publish":
+        _render_publish_pipeline_report(context)
+    else:
+        _render_pipeline_report(context)
 
     if plan.action == "inspect":
         return 0 if _publish_payload_ready(context) and context.ranking.publish_decision != "block" else 1
@@ -582,7 +586,6 @@ def _execute_plan(plan: PublishPlan) -> int:
         return 1
 
     _render_bundle(context, bundle_bytes)
-    _render_relationship_alerts(context)
     if not _confirm("Upload this skill to the registry?", default=False, allow_back=True):
         CONSOLE.print("[grey70]Upload cancelled.[/grey70]")
         return 0
@@ -595,8 +598,6 @@ def _execute_plan(plan: PublishPlan) -> int:
             bundle_bytes=bundle_bytes,
         )
     _render_registry_result(result)
-    if 200 <= result.status_code < 300:
-        _print_step_separator()
     return 0 if 200 <= result.status_code < 300 else 1
 
 
@@ -619,19 +620,13 @@ def _run_pipeline(plan: PublishPlan) -> PublishContext:
 
 def _render_plan(plan: PublishPlan) -> None:
     steps = (
-        ("discovery", "inspect skill files"),
-        ("identity", "derive registry identity"),
-        ("metadata", "collect skill metadata"),
-        ("security", "scan skill content"),
-        ("validation", "validate SKILL.md"),
-        ("performance_exam", "evaluate skill performance"),
-        ("ranking", "calculate publish decision"),
-        ("delivery", "prepare registry payload"),
-        ("compression", "prepare bundle contents"),
+        ("discovery", "inspect skill files and derive identity"),
+        ("review", "collect metadata and run validation checks"),
+        ("assessment", "scan security, evaluate performance, and calculate decision"),
+        ("delivery", "prepare registry payload and bundle contents"),
     )
     if plan.action == "publish":
         steps += (
-            ("bundle", "build immutable artifact"),
             ("registry", "upload after confirmation"),
         )
     body = Group(
@@ -655,12 +650,32 @@ def _render_plan(plan: PublishPlan) -> None:
 
 
 def _render_pipeline_report(context: PublishContext) -> None:
+    _render_pipeline_report_sections(
+        context,
+        include_final_scores=not context.metadata.extra.pop(
+            "_hide_final_scores_in_report", False
+        ),
+    )
+
+
+def _render_publish_pipeline_report(context: PublishContext) -> None:
+    context.metadata.extra["_hide_final_scores_in_report"] = True
+    _render_pipeline_report(context)
+
+
+def _render_pipeline_report_sections(
+    context: PublishContext,
+    *,
+    include_final_scores: bool,
+) -> None:
     sections = _report_detail_sections(context)
     final_scores = {
         "Security score": context.security.score,
         "Maturity score": context.metadata.maturity_score,
     }
     for index, (title, rows) in enumerate(sections):
+        if title == "Final Scores" and not include_final_scores:
+            continue
         if index:
             _print_step_separator()
         table = Table.grid(padding=(0, 2))
@@ -683,7 +698,44 @@ def _final_score_value(label: str, value: str, score: float | None) -> Text:
     return Text(value, style=style)
 
 
+def _render_publish_summary(context: PublishContext, bundle_bytes: bytes) -> None:
+    """Render the publish-only outcomes in one compact frame."""
+    CONSOLE.print(
+        _frame(
+            Group(
+                Text("Final Scores", style=THEME.text_detail),
+                _final_scores_table(context),
+                Rule(style=THEME.border_secondary),
+                Text("Bundle", style=THEME.text_detail),
+                _bundle_table(context, bundle_bytes),
+                Rule(style=THEME.border_secondary),
+                Text("Relationship Alerts", style=THEME.text_detail),
+                _relationship_alert(context),
+            ),
+            title="Publish Summary",
+        )
+    )
+
+
 def _render_bundle(context: PublishContext, bundle_bytes: bytes) -> None:
+    """Compatibility entry point for the consolidated publish summary."""
+    _render_publish_summary(context, bundle_bytes)
+
+
+def _final_scores_table(context: PublishContext) -> Table:
+    table = Table.grid(expand=True, padding=(0, 2))
+    table.add_column(style=THEME.text_muted, no_wrap=True)
+    table.add_column(style=THEME.text_body)
+    for label, value in _report_detail_sections(context)[-1][1]:
+        score = {
+            "Security score": context.security.score,
+            "Maturity score": context.metadata.maturity_score,
+        }.get(label)
+        table.add_row(label, _final_score_value(label, value, score))
+    return table
+
+
+def _bundle_table(context: PublishContext, bundle_bytes: bytes) -> Table:
     table = Table.grid(expand=True, padding=(0, 2))
     table.add_column(style=THEME.text_muted, no_wrap=True)
     table.add_column(style=THEME.text_body)
@@ -691,7 +743,7 @@ def _render_bundle(context: PublishContext, bundle_bytes: bytes) -> None:
     table.add_row("Bundle size", f"{len(bundle_bytes)} bytes")
     table.add_row("Registry slug", context.identity.slug)
     table.add_row("Registry version", context.identity.version)
-    CONSOLE.print(_frame(table, title="Bundle"))
+    return table
 
 
 def _render_registry_result(result) -> None:
@@ -774,22 +826,18 @@ def _render_existing_slug_block(
     return True
 
 
-def _render_relationship_alerts(context: PublishContext) -> None:
+def _relationship_alert(context: PublishContext) -> Text:
     relationships = context.delivery_payload.relationships
     if not _has_relationships(relationships):
-        return
+        return Text("No relationship references declared.", style=THEME.text_muted)
 
     token = _relationship_check_token(_default_publish_token())
     if not token:
-        CONSOLE.print(
-            _frame(
-                "Skipped relationship existence check. Set APTITUDE_READ_TOKEN, "
-                "REGISTRY_READ_TOKEN, or a publish token with read scope.",
-                title="Relationship Alerts",
-                border_style="yellow",
-            )
+        return Text(
+            "Skipped relationship existence check. Set APTITUDE_READ_TOKEN, "
+            "REGISTRY_READ_TOKEN, or a publish token with read scope.",
+            style="yellow",
         )
-        return
 
     issues = check_relationship_references(
         registry_url=_default_registry_url(),
@@ -797,21 +845,9 @@ def _render_relationship_alerts(context: PublishContext) -> None:
         relationships=relationships,
     )
     if not issues:
-        CONSOLE.print(
-            _frame(
-                "All referenced relationship targets were found.",
-                title="Relationship Alerts",
-            )
-        )
-        return
+        return Text("All referenced relationship targets were found.", style=THEME.text_body)
 
-    CONSOLE.print(
-        _frame(
-            "\n".join(_relationship_alert_lines(issues)),
-            title="Relationship Alerts",
-            border_style="yellow",
-        )
-    )
+    return Text("\n".join(_relationship_alert_lines(issues)), style="yellow")
 
 
 def _has_relationships(relationships: dict[str, object]) -> bool:
