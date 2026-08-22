@@ -30,15 +30,23 @@ def resolve_executable(name: str, *, start: Path) -> str | None:
     if executable:
         return executable
 
-    active_venv_candidate = Path(sys.executable).parent / name
-    if active_venv_candidate.exists() and os.access(active_venv_candidate, os.X_OK):
-        return str(active_venv_candidate)
-
-    for directory in (start, *start.parents):
-        candidate = directory / ".venv" / "bin" / name
+    for candidate in _executable_candidates(Path(sys.executable).parent, name):
         if candidate.exists() and os.access(candidate, os.X_OK):
             return str(candidate)
+
+    for directory in (start, *start.parents):
+        for scripts_dir in (directory / ".venv" / "bin", directory / ".venv" / "Scripts"):
+            for candidate in _executable_candidates(scripts_dir, name):
+                if candidate.exists() and os.access(candidate, os.X_OK):
+                    return str(candidate)
     return None
+
+
+def _executable_candidates(directory: Path, name: str) -> list[Path]:
+    candidates = [directory / name]
+    if os.name == "nt" and not name.lower().endswith(".exe"):
+        candidates.append(directory / f"{name}.exe")
+    return candidates
 
 
 def run_command(
@@ -54,6 +62,8 @@ def run_command(
         cwd=str(cwd),
         env=dict(env) if env is not None else None,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         capture_output=True,
         timeout=timeout_seconds,
         check=False,

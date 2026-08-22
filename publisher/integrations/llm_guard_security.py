@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 from contextlib import contextmanager, redirect_stderr, redirect_stdout
+import importlib
+import importlib.machinery
+import importlib.util
 import io
 import json
 import logging
 import os
+import sys
+import types
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -153,15 +158,73 @@ def _failed_result(*, llm_guard_dir: Path, reason: str) -> LlmGuardSecurityResul
 
 
 def _load_llm_guard():
-    from llm_guard import scan_prompt
-    from llm_guard.input_scanners import InvisibleText, PromptInjection, Secrets
+    _ensure_llm_guard_lightweight_packages()
+    PromptInjection = _load_llm_guard_symbol(
+        "llm_guard.input_scanners.prompt_injection",
+        "PromptInjection",
+    )
+    Secrets = _load_llm_guard_symbol(
+        "llm_guard.input_scanners.secrets",
+        "Secrets",
+    )
+    InvisibleText = _load_llm_guard_symbol(
+        "llm_guard.input_scanners.invisible_text",
+        "InvisibleText",
+    )
 
     scanners = [
         PromptInjection(threshold=_float_env("PUBLISHER_LLM_GUARD_PROMPT_INJECTION_THRESHOLD", 0.85)),
         Secrets(),
         InvisibleText(),
     ]
-    return scan_prompt, scanners
+    return _scan_prompt, scanners
+
+
+def _ensure_llm_guard_lightweight_packages() -> Path:
+    spec = importlib.util.find_spec("llm_guard")
+    if spec is None or not spec.submodule_search_locations:
+        raise ImportError("No module named 'llm_guard'")
+
+    llm_guard_root = Path(next(iter(spec.submodule_search_locations)))
+    _ensure_namespace_package("llm_guard", llm_guard_root)
+    _ensure_namespace_package("llm_guard.input_scanners", llm_guard_root / "input_scanners")
+    return llm_guard_root
+
+
+def _ensure_namespace_package(name: str, path: Path) -> None:
+    if name in sys.modules:
+        return
+
+    module = types.ModuleType(name)
+    module.__file__ = str(path / "__init__.py")
+    module.__path__ = [str(path)]
+    module.__package__ = name
+    spec = importlib.machinery.ModuleSpec(name, loader=None, is_package=True)
+    spec.submodule_search_locations = [str(path)]
+    module.__spec__ = spec
+    sys.modules[name] = module
+
+
+def _load_llm_guard_symbol(module_name: str, symbol_name: str):
+    module = importlib.import_module(module_name)
+    return getattr(module, symbol_name)
+
+
+def _scan_prompt(
+    scanners: list[object],
+    prompt: str,
+) -> tuple[str, dict[str, bool], dict[str, float]]:
+    sanitized_prompt = prompt
+    results_valid: dict[str, bool] = {}
+    results_score: dict[str, float] = {}
+
+    for scanner in scanners:
+        sanitized_prompt, is_valid, risk_score = scanner.scan(sanitized_prompt)
+        scanner_name = scanner.__class__.__name__
+        results_valid[scanner_name] = bool(is_valid)
+        results_score[scanner_name] = _coerce_score(risk_score)
+
+    return sanitized_prompt, results_valid, results_score
 
 
 @contextmanager
