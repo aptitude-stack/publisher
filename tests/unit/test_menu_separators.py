@@ -49,7 +49,7 @@ def test_final_scores_use_security_and_maturity_thresholds() -> None:
     assert passing_maturity.style == menu.THEME.text_body
 
 
-def test_publish_summary_groups_scores_bundle_and_relationship_alert(monkeypatch) -> None:
+def test_registry_result_includes_compact_publish_summary(monkeypatch) -> None:
     output = StringIO()
     monkeypatch.setattr(menu, "CONSOLE", Console(file=output, width=120))
     monkeypatch.setenv("APTITUDE_PUBLISH_TOKEN", "publish-token")
@@ -63,14 +63,26 @@ def test_publish_summary_groups_scores_bundle_and_relationship_alert(monkeypatch
     context.ranking.publish_decision = "allow"
     context.delivery_payload.relationships = {"depends_on": [{"slug": "base"}]}
 
-    menu._render_publish_summary(context, b"bundle")
+    menu._render_registry_result(
+        RegistryPublishResult(status_code=201, body={}, request_id=None),
+        context=context,
+        bundle_bytes=b"bundle",
+    )
 
     rendered = output.getvalue()
-    assert "Publish Summary" in rendered
-    assert "Final Scores" in rendered
-    assert "Bundle" in rendered
-    assert "Relationship Alerts" in rendered
+    assert "Registry Result" in rendered
+    assert "Security score" in rendered
+    assert "Maturity score" in rendered
+    assert "Bundle size" in rendered
+    assert "Registry slug" in rendered
+    assert "example@0.1.0" in rendered
     assert "All referenced relationship targets were found." in rendered
+    assert "Publish Summary" not in rendered
+    assert "Final Scores" not in rendered
+    assert rendered.count("Bundle") == 1
+    assert "Relationship Alerts" not in rendered
+    assert "Path root" not in rendered
+    assert "Publish decision" not in rendered
     assert rendered.count("╭") == 1
 
 
@@ -606,25 +618,38 @@ def test_successful_publish_leaves_next_menu_separator_to_the_wizard(
     context.delivery_payload.governance["trust_tier"] = "untrusted"
     context.ranking.publish_decision = "allow"
     separators: list[bool] = []
+    activities: list[str] = []
+    output = StringIO()
+    prompt_output: list[str] = []
 
     @contextmanager
-    def no_activity(*args, **kwargs):
+    def record_activity(label: str):
+        activities.append(label)
         yield
 
     monkeypatch.setenv("APTITUDE_PUBLISH_TOKEN", "publish-token")
-    monkeypatch.setattr(menu, "_activity", no_activity)
+    monkeypatch.setattr(menu, "CONSOLE", Console(file=output, width=120))
+    monkeypatch.setattr(menu, "_activity", record_activity)
     monkeypatch.setattr(menu, "_render_existing_slug_preflight_block_if_needed", lambda **kwargs: False)
     monkeypatch.setattr(menu, "_run_pipeline", lambda plan: context)
-    monkeypatch.setattr(menu, "_render_pipeline_report", lambda context: None)
+    monkeypatch.setattr(
+        menu,
+        "_render_pipeline_report",
+        lambda context: menu.CONSOLE.print("report"),
+    )
     monkeypatch.setattr(menu, "build_bundle_bytes", lambda context: b"bundle")
     monkeypatch.setattr(menu, "_render_bundle", lambda context, bundle: None)
-    monkeypatch.setattr(menu, "_confirm", lambda *args, **kwargs: True)
+    monkeypatch.setattr(
+        menu,
+        "_confirm",
+        lambda *args, **kwargs: prompt_output.append(output.getvalue()) or True,
+    )
     monkeypatch.setattr(
         menu,
         "publish_to_registry",
         lambda **kwargs: RegistryPublishResult(status_code=201, body={}, request_id=None),
     )
-    monkeypatch.setattr(menu, "_render_registry_result", lambda result: None)
+    monkeypatch.setattr(menu, "_render_registry_result", lambda *args, **kwargs: None)
     monkeypatch.setattr(menu, "_print_step_separator", lambda: separators.append(True))
 
     plan = menu.PublishPlan(
@@ -637,11 +662,13 @@ def test_successful_publish_leaves_next_menu_separator_to_the_wizard(
         artifact_origin="internal",
         policy_pack_slug=None,
         publisher_identity=None,
-        scan_profile="fast",
+        scan_profile="slow",
     )
 
     assert menu._execute_plan(plan) == 0
     assert separators == []
+    assert activities[0] == "Running full publisher scan"
+    assert prompt_output == ["report\n\n"]
 
 
 def test_publish_plan_blocks_existing_create_slug_before_pipeline(

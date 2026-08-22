@@ -14,6 +14,7 @@ from publisher.app.cli import (
     _print_pipeline_report,
     _publisher_cli_version,
     _run_admin_batch_upload,
+    _scan_profile_environment,
     main,
 )
 from publisher.domain.models import PublishContext, SkillSource
@@ -336,6 +337,15 @@ def test_admin_batch_upload_uses_fast_scan_environment_by_default(
         "default_tests": "true",
         "timeout": "120",
     }
+
+
+def test_full_scan_profile_uses_longer_upskill_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("PUBLISHER_UPSKILL_TIMEOUT_SECONDS", raising=False)
+
+    with _scan_profile_environment("slow"):
+        assert os.environ["PUBLISHER_UPSKILL_TIMEOUT_SECONDS"] == "600"
 
 
 def test_publish_requires_token_before_pipeline(

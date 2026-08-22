@@ -14,7 +14,6 @@ from rich import box
 from rich.console import Console, Group
 from rich.panel import Panel
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
-from rich.rule import Rule
 from rich.table import Table
 from rich.text import Text
 
@@ -546,7 +545,11 @@ def _execute_plan(plan: PublishPlan) -> int:
     ):
         return 1
 
-    with _activity("Running publisher pipeline"):
+    with _activity(
+        "Running full publisher scan"
+        if plan.scan_profile == "slow"
+        else "Running publisher pipeline"
+    ):
         context = _run_pipeline(plan)
     if plan.action == "publish":
         _render_publish_pipeline_report(context)
@@ -585,7 +588,9 @@ def _execute_plan(plan: PublishPlan) -> int:
         )
         return 1
 
-    _render_bundle(context, bundle_bytes)
+    summary = _render_bundle(context, bundle_bytes)
+    relationship_alert = _relationship_alert(context)
+    CONSOLE.print()
     if not _confirm("Upload this skill to the registry?", default=False, allow_back=True):
         CONSOLE.print("[grey70]Upload cancelled.[/grey70]")
         return 0
@@ -597,7 +602,11 @@ def _execute_plan(plan: PublishPlan) -> int:
             context=context,
             bundle_bytes=bundle_bytes,
         )
-    _render_registry_result(result)
+    _render_registry_result(
+        result,
+        summary=summary,
+        relationship_alert=relationship_alert,
+    )
     return 0 if 200 <= result.status_code < 300 else 1
 
 
@@ -698,62 +707,50 @@ def _final_score_value(label: str, value: str, score: float | None) -> Text:
     return Text(value, style=style)
 
 
-def _render_publish_summary(context: PublishContext, bundle_bytes: bytes) -> None:
-    """Render the publish-only outcomes in one compact frame."""
-    CONSOLE.print(
-        _frame(
-            Group(
-                Text("Final Scores", style=THEME.text_detail),
-                _final_scores_table(context),
-                Rule(style=THEME.border_secondary),
-                Text("Bundle", style=THEME.text_detail),
-                _bundle_table(context, bundle_bytes),
-                Rule(style=THEME.border_secondary),
-                Text("Relationship Alerts", style=THEME.text_detail),
-                _relationship_alert(context),
-            ),
-            title="Publish Summary",
-        )
-    )
-
-
-def _render_bundle(context: PublishContext, bundle_bytes: bytes) -> None:
-    """Compatibility entry point for the consolidated publish summary."""
-    _render_publish_summary(context, bundle_bytes)
-
-
-def _final_scores_table(context: PublishContext) -> Table:
-    table = Table.grid(expand=True, padding=(0, 2))
+def _render_bundle(context: PublishContext, bundle_bytes: bytes) -> Table:
+    """Build the compact publish outcome rows for the registry result."""
+    table = Table.grid(padding=(0, 2))
     table.add_column(style=THEME.text_muted, no_wrap=True)
     table.add_column(style=THEME.text_body)
     for label, value in _report_detail_sections(context)[-1][1]:
+        if label == "Publish decision":
+            continue
         score = {
             "Security score": context.security.score,
             "Maturity score": context.metadata.maturity_score,
         }.get(label)
         table.add_row(label, _final_score_value(label, value, score))
-    return table
-
-
-def _bundle_table(context: PublishContext, bundle_bytes: bytes) -> Table:
-    table = Table.grid(expand=True, padding=(0, 2))
-    table.add_column(style=THEME.text_muted, no_wrap=True)
-    table.add_column(style=THEME.text_body)
-    table.add_row("Path root", str(context.inventory.skill_root))
     table.add_row("Bundle size", f"{len(bundle_bytes)} bytes")
-    table.add_row("Registry slug", context.identity.slug)
-    table.add_row("Registry version", context.identity.version)
+    table.add_row("Registry slug", f"{context.identity.slug}@{context.identity.version}")
     return table
 
 
-def _render_registry_result(result) -> None:
-    table = Table.grid(expand=True, padding=(0, 2))
+def _render_registry_result(
+    result,
+    *,
+    context: PublishContext | None = None,
+    bundle_bytes: bytes | None = None,
+    summary: Table | None = None,
+    relationship_alert: Text | None = None,
+) -> None:
+    table = Table.grid(padding=(0, 2))
     table.add_column(style=THEME.text_muted, no_wrap=True)
     table.add_column(style=THEME.text_body)
     for label, value in _registry_result_lines(result):
         table.add_row(label.title(), value)
     border_style = "green" if 200 <= result.status_code < 300 else "red"
-    CONSOLE.print(_frame(table, title="Registry Result", border_style=border_style))
+    if summary is None and context is not None and bundle_bytes is not None:
+        summary = _render_bundle(context, bundle_bytes)
+    if relationship_alert is None and context is not None:
+        relationship_alert = _relationship_alert(context)
+    renderables: list[object] = [table]
+    if summary is not None:
+        renderables.extend((Text(""), summary))
+    if relationship_alert is not None:
+        renderables.extend((Text(""), relationship_alert))
+    CONSOLE.print(
+        _frame(Group(*renderables), title="Registry Result", border_style=border_style)
+    )
 
 
 def _render_existing_slug_block_if_needed(
