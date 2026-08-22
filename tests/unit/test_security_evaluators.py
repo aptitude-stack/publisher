@@ -11,11 +11,78 @@ from publisher.integrations.llm_guard_security import (
     run_llm_guard_security_scan,
 )
 from publisher.integrations import upskill_eval
+import publisher.integrations.llm_guard_security as llm_guard_security
 from publisher.integrations.upskill_eval import UpskillEvaluation, run_upskill_evaluation
 import publisher.stages.performance_exam as performance_stage
 import publisher.stages.security as security_stage
 from publisher.gates.performance_exam import PerformanceExamGate
 from publisher.stages.security import SecurityStage
+
+
+def test_llm_guard_loader_avoids_input_scanners_package_init(tmp_path, monkeypatch) -> None:
+    package_root = tmp_path / "llm_guard"
+    scanners_root = package_root / "input_scanners"
+    scanners_root.mkdir(parents=True)
+    (package_root / "__init__.py").write_text(
+        "raise RuntimeError('llm_guard package init should not run')\n",
+        encoding="utf-8",
+    )
+    (scanners_root / "__init__.py").write_text(
+        "raise RuntimeError('input_scanners package init should not run')\n",
+        encoding="utf-8",
+    )
+    (scanners_root / "prompt_injection.py").write_text(
+        """
+class PromptInjection:
+    def __init__(self, threshold):
+        self.threshold = threshold
+
+    def scan(self, text):
+        return text, True, 0.1
+""",
+        encoding="utf-8",
+    )
+    (scanners_root / "secrets.py").write_text(
+        """
+class Secrets:
+    def scan(self, text):
+        return text, True, 0.0
+""",
+        encoding="utf-8",
+    )
+    (scanners_root / "invisible_text.py").write_text(
+        """
+class InvisibleText:
+    def scan(self, text):
+        return text, True, 0.0
+""",
+        encoding="utf-8",
+    )
+
+    for name in list(sys.modules):
+        if name == "llm_guard" or name.startswith("llm_guard."):
+            monkeypatch.delitem(sys.modules, name, raising=False)
+    monkeypatch.syspath_prepend(str(tmp_path))
+
+    try:
+        scan_prompt, scanners = llm_guard_security._load_llm_guard()
+        sanitized, results_valid, results_score = scan_prompt(scanners, "safe text")
+    finally:
+        for name in list(sys.modules):
+            if name == "llm_guard" or name.startswith("llm_guard."):
+                monkeypatch.delitem(sys.modules, name, raising=False)
+
+    assert sanitized == "safe text"
+    assert results_valid == {
+        "PromptInjection": True,
+        "Secrets": True,
+        "InvisibleText": True,
+    }
+    assert results_score == {
+        "PromptInjection": 0.1,
+        "Secrets": 0.0,
+        "InvisibleText": 0.0,
+    }
 
 
 def test_security_stage_marks_llm_guard_unavailable_when_missing(tmp_path, monkeypatch) -> None:
@@ -340,6 +407,8 @@ def test_upskill_pypi_launcher_applies_model_before_fastagent_startup(monkeypatc
         loaded = upskill_cli.load_agents(fast, cards_path)
 
     assert loaded == ["evaluator", "skill_gen", "test_gen"]
+    assert fast.agents["evaluator"]["config"].model == "openai.gpt-4.1-mini"
+    assert fast.agents["skill_gen"]["config"].model == "openai.gpt-4.1-mini"
     assert fast.agents["test_gen"]["config"].model == "openai.gpt-4.1-mini"
 
 

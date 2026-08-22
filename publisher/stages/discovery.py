@@ -95,9 +95,10 @@ class DiscoveryStage(PublisherStage):
         for path in sorted(skill_root.rglob("*")):
             if not path.is_file():
                 continue
-            relative_path = str(path.relative_to(skill_root))
-            if relative_path.startswith(".publisher_artifacts/"):
+            relative = path.relative_to(skill_root)
+            if ".publisher_artifacts" in relative.parts:
                 continue
+            relative_path = str(relative)
             if relative_path == "SKILL.md":
                 continue
             if relative_path.startswith("scripts/"):

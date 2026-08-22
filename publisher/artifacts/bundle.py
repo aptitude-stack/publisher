@@ -20,7 +20,7 @@ def build_bundle_bytes(context: PublishContext) -> bytes:
         if not path.is_file():
             continue
         relative_path = path.relative_to(skill_root)
-        if str(relative_path).startswith(".publisher_artifacts/"):
+        if ".publisher_artifacts" in relative_path.parts:
             continue
         archive_path = f"{_BUNDLE_ROOT}/{relative_path.as_posix()}"
         entries.append((archive_path, path.read_bytes()))
