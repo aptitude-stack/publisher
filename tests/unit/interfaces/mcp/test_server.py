@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
 from typing import Any
 import warnings
 
 from publisher.domain.models import PublishContext, SkillSource
-from publisher.interfaces.mcp.models import InspectSkillInput, PublishSkillInput
+from publisher.interfaces.mcp.models import InspectSkillInput, PublishSkillInput, ResponseFormat
 from publisher.registry.client import (
     ExistingSkill,
     ExistingSkillVersion,
@@ -77,13 +78,15 @@ def test_inspect_skill_returns_structured_evaluation(tmp_path: Path) -> None:
     pipeline = FakePipeline(_context(skill_root))
     adapter = PublisherMcpAdapter(pipeline_factory=lambda: pipeline)
 
-    result = adapter.inspect_skill(InspectSkillInput(skill_path=skill_root))
+    result = adapter.inspect_skill(
+        InspectSkillInput(skill_path=skill_root, response_format=ResponseFormat.JSON)
+    )
+    payload = json.loads(result)
 
-    assert result.ok is True
-    assert result.status == "ready"
-    assert result.evaluation is not None
-    assert result.evaluation.slug == "example-skill"
-    assert result.evaluation.validation_passed is True
+    assert payload["ok"] is True
+    assert payload["status"] == "ready"
+    assert payload["evaluation"]["slug"] == "example-skill"
+    assert payload["evaluation"]["validation_passed"] is True
     assert pipeline.run_count == 1
 
 
@@ -135,11 +138,13 @@ def test_publish_skill_requires_environment_token_before_pipeline(
             slug="example-skill",
             intent="create_skill",
             confirm_upload=True,
+            response_format=ResponseFormat.JSON,
         )
     )
+    payload = json.loads(result)
 
-    assert result.status == "error"
-    assert "APTITUDE_PUBLISH_TOKEN" in result.message
+    assert payload["status"] == "error"
+    assert "APTITUDE_PUBLISH_TOKEN" in payload["message"]
     assert pipeline.run_count == 0
 
 
@@ -168,11 +173,13 @@ def test_publish_skill_blocks_duplicate_create_before_pipeline(
             slug="example-skill",
             intent="create_skill",
             confirm_upload=True,
+            response_format=ResponseFormat.JSON,
         )
     )
+    payload = json.loads(result)
 
-    assert result.status == "blocked"
-    assert "already exists" in result.message
+    assert payload["status"] == "blocked"
+    assert "already exists" in payload["message"]
     assert pipeline.run_count == 0
 
 
@@ -198,11 +205,13 @@ def test_publish_skill_reports_unavailable_duplicate_check_before_pipeline(
             slug="example-skill",
             intent="create_skill",
             confirm_upload=True,
+            response_format=ResponseFormat.JSON,
         )
     )
+    payload = json.loads(result)
 
-    assert result.status == "error"
-    assert "Could not verify" in result.message
+    assert payload["status"] == "error"
+    assert "Could not verify" in payload["message"]
     assert pipeline.run_count == 0
 
 
@@ -215,6 +224,7 @@ def test_publish_skill_does_not_upload_blocked_evaluation(
     pipeline = FakePipeline(_context(skill_root, decision="block"))
     monkeypatch.setenv("APTITUDE_PUBLISH_TOKEN", "fake-token")
     monkeypatch.setattr(server, "get_existing_skill", lambda **_: None)
+    monkeypatch.setattr(server, "check_relationship_references", lambda **_: [])
     monkeypatch.setattr(
         server,
         "publish_to_registry",
@@ -229,12 +239,13 @@ def test_publish_skill_does_not_upload_blocked_evaluation(
             slug="example-skill",
             intent="create_skill",
             confirm_upload=True,
+            response_format=ResponseFormat.JSON,
         )
     )
+    payload = json.loads(result)
 
-    assert result.status == "blocked"
-    assert result.evaluation is not None
-    assert result.evaluation.publish_decision == "block"
+    assert payload["status"] == "blocked"
+    assert payload["evaluation"]["publish_decision"] == "block"
 
 
 def test_publish_skill_uploads_fresh_bundle_and_returns_warnings(
@@ -280,15 +291,16 @@ def test_publish_skill_uploads_fresh_bundle_and_returns_warnings(
             slug="example-skill",
             intent="create_skill",
             confirm_upload=True,
+            response_format=ResponseFormat.JSON,
         )
     )
+    payload = json.loads(result)
 
-    assert result.status == "published"
-    assert result.registry is not None
-    assert result.registry.status_code == 201
-    assert result.registry.request_id == "request-123"
-    assert result.registry.bundle_size_bytes == 6
-    assert result.warnings == [
+    assert payload["status"] == "published"
+    assert payload["registry"]["status_code"] == 201
+    assert payload["registry"]["request_id"] == "request-123"
+    assert payload["registry"]["bundle_size_bytes"] == 6
+    assert payload["warnings"] == [
         "No visible versions found for relationship target missing-skill."
     ]
     assert pipeline.run_count == 1
@@ -322,12 +334,14 @@ def test_publish_skill_reports_relationship_verification_failure(
             slug="example-skill",
             intent="create_skill",
             confirm_upload=True,
+            response_format=ResponseFormat.JSON,
         )
     )
+    payload = json.loads(result)
 
-    assert result.status == "error"
+    assert payload["status"] == "error"
     assert (
-        result.message == "Relationship verification failed: invalid registry response"
+        payload["message"] == "Relationship verification failed: invalid registry response"
     )
 
 
@@ -360,11 +374,13 @@ def test_publish_skill_reports_bundle_failure_without_upload(
             slug="example-skill",
             intent="create_skill",
             confirm_upload=True,
+            response_format=ResponseFormat.JSON,
         )
     )
+    payload = json.loads(result)
 
-    assert result.status == "error"
-    assert result.message == "Registry upload failed: zstd unavailable"
+    assert payload["status"] == "error"
+    assert payload["message"] == "Evaluation failed: zstd unavailable"
 
 
 def test_tool_annotations_and_registration_match_side_effects() -> None:

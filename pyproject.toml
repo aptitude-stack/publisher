@@ -1,6 +1,6 @@
 [project]
 name = "aptitude-publisher"
-version = "0.1.14"
+version = "0.1.15"
 description = "Publisher CLI for evaluating and publishing Aptitude skills"
 readme = "PYPI.md"
 requires-python = ">=3.13.5,<3.14"
@@ -32,6 +32,7 @@ dependencies = [
     "pydantic>=2,<3",
     "PyYAML>=6.0",
     "rich>=13.0",
+    "toons>=0.5,<1",
     "upskill==0.2.1",
     "zstandard>=0.23,<0.24",
     "numpy>=2.4.6",
