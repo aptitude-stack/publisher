@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from enum import Enum
 from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
@@ -12,6 +13,14 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 Intent = Literal["create_skill", "publish_version"]
 TrustTier = Literal["untrusted", "internal", "verified"]
 ArtifactOrigin = Literal["internal", "imported", "verified", "restricted"]
+
+
+class ResponseFormat(str, Enum):
+    """Supported Publisher MCP response formats."""
+
+    MARKDOWN = "markdown"
+    JSON = "json"
+    TOON = "toon"
 
 
 class _StrictInput(BaseModel):
@@ -34,6 +43,10 @@ class InspectSkillInput(_StrictInput):
     artifact_origin: ArtifactOrigin = "internal"
     policy_pack_slug: str | None = None
     publisher_identity: str | None = None
+    response_format: ResponseFormat = Field(
+        default=ResponseFormat.MARKDOWN,
+        description="Response format: markdown, json, or toon.",
+    )
 
     @field_validator("skill_path")
     @classmethod
@@ -79,11 +92,12 @@ class EvaluationSummary(BaseModel):
     validation_passed: bool
     blocking_issues: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
-    security_score: float | None
     security_decision: str | None
-    performance_score: float | None
-    ranking_score: float | None
-    ranking_label: str | None
+    performance_evidence_score: float | None
+    maturity_score: float | None
+    security_score: float | None
+    overall_score: float | None
+    overall_label: str | None
     artifacts_dir: str | None
 
 
@@ -105,3 +119,7 @@ class PublisherToolResult(BaseModel):
     evaluation: EvaluationSummary | None = None
     registry: RegistrySummary | None = None
     warnings: list[str] = Field(default_factory=list)
+    evidence_reused: bool = False
+    evidence_refreshed: bool = False
+    receipt_created_at: str | None = None
+    receipt_expires_at: str | None = None

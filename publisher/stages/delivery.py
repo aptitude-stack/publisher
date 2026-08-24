@@ -55,6 +55,7 @@ class DeliveryStage(PublisherStage):
             "token_estimate": context.metadata.token_estimate,
             "maturity_score": context.metadata.maturity_score,
             "security_score": context.security.score,
+            "overall_score": context.ranking.total_score,
         }
         provenance = None
         if context.inventory.repo_url and context.inventory.commit_sha:

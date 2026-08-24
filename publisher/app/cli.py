@@ -1353,16 +1353,20 @@ def _separator() -> str:
 
 
 def _publisher_cli_version() -> str:
+    pyproject_path = Path(__file__).resolve().parents[2] / "pyproject.toml"
+    if pyproject_path.is_file():
+        try:
+            data = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
+            project = data.get("project", {})
+            version = project.get("version") if isinstance(project, dict) else None
+            if version:
+                return str(version)
+        except (OSError, tomllib.TOMLDecodeError):
+            pass
     try:
         return importlib_metadata.version(_PACKAGE_NAME)
     except importlib_metadata.PackageNotFoundError:
-        pyproject_path = Path(__file__).resolve().parents[2] / "pyproject.toml"
-        if not pyproject_path.is_file():
-            return "unknown"
-        data = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
-        project = data.get("project", {})
-        version = project.get("version") if isinstance(project, dict) else None
-        return str(version or "unknown")
+        return "unknown"
 
 
 def _load_local_env_defaults() -> None:

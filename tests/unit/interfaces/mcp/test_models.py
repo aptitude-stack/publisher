@@ -5,7 +5,11 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from publisher.interfaces.mcp.models import InspectSkillInput, PublishSkillInput
+from publisher.interfaces.mcp.models import (
+    InspectSkillInput,
+    PublishSkillInput,
+    ResponseFormat,
+)
 
 
 def test_inspect_input_resolves_existing_skill_directory(tmp_path: Path) -> None:
@@ -58,3 +62,25 @@ def test_publish_input_rejects_non_http_registry_url(tmp_path: Path) -> None:
             registry_url="file:///tmp/registry",
             confirm_upload=True,
         )
+
+
+def test_public_mcp_inputs_default_to_markdown_and_accept_machine_formats(
+    tmp_path: Path,
+) -> None:
+    skill_file = tmp_path / "SKILL.md"
+    skill_file.write_text("---\nname: example-skill\n---\n", encoding="utf-8")
+
+    inspect = InspectSkillInput(skill_path=skill_file)
+    publish = PublishSkillInput(
+        skill_path=skill_file,
+        slug="example-skill",
+        intent="create_skill",
+        confirm_upload=True,
+        response_format=ResponseFormat.JSON,
+    )
+
+    assert inspect.response_format is ResponseFormat.MARKDOWN
+    assert publish.response_format is ResponseFormat.JSON
+    assert InspectSkillInput(
+        skill_path=skill_file, response_format=ResponseFormat.TOON
+    ).response_format is ResponseFormat.TOON
