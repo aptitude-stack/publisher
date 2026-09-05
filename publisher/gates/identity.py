@@ -6,6 +6,7 @@ import re
 
 from publisher.gates.base import PublisherGate, explain_gate_result
 from publisher.domain.models import PublishContext
+from publisher.versioning import SEMVER_PATTERN
 
 
 class IdentityGate(PublisherGate):
@@ -26,6 +27,18 @@ class IdentityGate(PublisherGate):
         frontmatter = context.source.parsed_content.get("frontmatter", {})
         declared_name = frontmatter.get("name") if isinstance(frontmatter, dict) else None
 
+        for field, value, limit, required in (
+            ("namespace", context.source.namespace, 128, True),
+            ("policy_pack_slug", context.source.policy_pack_slug, 128, False),
+            ("publisher_identity", context.source.publisher_identity, 200, False),
+            ("repo_url", context.inventory.repo_url, 500, False),
+            ("tree_path", context.inventory.tree_path, 500, False),
+        ):
+            if value is None and not required:
+                continue
+            if not isinstance(value, str) or not value.strip() or len(value) > limit:
+                blocking_issues.append(f"{field} must contain 1 to {limit} characters.")
+
         if not slug:
             blocking_issues.append("Identity did not extract a slug.")
         elif not isinstance(slug, str) or not re.fullmatch(
@@ -37,8 +50,11 @@ class IdentityGate(PublisherGate):
 
         if not version:
             blocking_issues.append("Identity did not extract a version.")
-        elif not isinstance(version, str) or not re.fullmatch(r"\d+\.\d+\.\d+", version):
-            blocking_issues.append("Version must follow semantic versioning in the form X.Y.Z.")
+        elif not isinstance(version, str) or SEMVER_PATTERN.fullmatch(version) is None:
+            blocking_issues.append(
+                "Version must follow semantic versioning, e.g. 1.2.3, "
+                "1.2.3-codex, or 1.2.3-gpt-6-astra+build.1 (no leading v)."
+            )
 
         if not intent:
             blocking_issues.append("Identity did not extract an intent.")

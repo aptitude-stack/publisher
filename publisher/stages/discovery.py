@@ -8,7 +8,7 @@ from typing import Any
 
 from publisher.domain.models import PublishContext
 from publisher.frontmatter import parse_skill_markdown
-from publisher.manifest import legacy_aptitude_fields, load_manifest
+from publisher.manifest import REMOVED_FIELDS, legacy_aptitude_fields, load_manifest
 from publisher.stages.base import PublisherStage
 
 
@@ -119,6 +119,9 @@ class DiscoveryStage(PublisherStage):
 
         frontmatter, body = parse_skill_markdown(raw_content)
         legacy = legacy_aptitude_fields(frontmatter)
+        removed = [field for field in legacy if field.split(".")[-1] in REMOVED_FIELDS]
+        if removed:
+            raise ValueError("Schema fields were removed; delete from SKILL.md: " + ", ".join(removed))
         if legacy:
             raise ValueError("Move Aptitude fields from SKILL.md to aptitude.yaml: " + ", ".join(legacy))
         manifest = load_manifest(skill_root)

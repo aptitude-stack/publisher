@@ -85,7 +85,7 @@ def test_receipt_is_canonical_atomic_and_credential_values_are_not_serialized(
     receipt_path = report_path(skill_root)
     raw = receipt_path.read_text(encoding="utf-8")
 
-    assert receipt["schema_version"] == 1
+    assert receipt["schema_version"] == 2
     assert receipt["source_bundle_sha256"] == hashlib.sha256(b"bundle").hexdigest()
     assert receipt["created_at"] == "2026-08-23T10:00:00Z"
     assert receipt["expires_at"] == "2026-08-23T11:00:00Z"
@@ -108,6 +108,7 @@ def test_signed_receipt_verifies_token_and_payload_integrity(tmp_path: Path) -> 
     assert isinstance(receipt["mac"], str)
     assert len(receipt["mac"]) == 64
     assert token not in raw
+
     assert hashlib.sha256(token.encode()).hexdigest() not in raw
     assert load_inspection_receipt(receipt_path, publish_token=token) == receipt
     assert load_inspection_receipt(receipt_path, publish_token="rotated-token") is None
@@ -115,6 +116,13 @@ def test_signed_receipt_verifies_token_and_payload_integrity(tmp_path: Path) -> 
     receipt["evidence"]["security"]["score"] = 0.1
     receipt_path.write_text(json.dumps({"schema_version": 1, "inspection_receipt": receipt}), encoding="utf-8")
     assert load_inspection_receipt(receipt_path, publish_token=token) is None
+
+
+def test_previous_contract_receipt_cannot_be_reused(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(receipt_module, "RECEIPT_SCHEMA_VERSION", 1)
+    write_inspection_receipt(_context(tmp_path), bundle_bytes=b"bundle")
+    monkeypatch.setattr(receipt_module, "RECEIPT_SCHEMA_VERSION", 2)
+    assert load_inspection_receipt(report_path(tmp_path)) is None
 
 
 def test_publisher_version_prefers_installed_package_metadata(

@@ -18,7 +18,7 @@ from publisher.domain.models import PublishContext
 from publisher.artifacts.report import safe as _safe, write_report
 
 
-RECEIPT_SCHEMA_VERSION = 1
+RECEIPT_SCHEMA_VERSION = 2
 RECEIPT_TTL = timedelta(hours=1)
 _CREDENTIAL_ENV_NAMES = (
     "OPENAI_API_KEY",

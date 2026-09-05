@@ -18,15 +18,14 @@ MANIFEST_FIELDS = frozenset(
         "version",
         "intent",
         "tags",
-        "inputs_schema",
-        "outputs_schema",
         "relationships",
         "token_estimate",
         "maturity_score",
         "security_score",
     }
 )
-LEGACY_APTITUDE_FIELDS = frozenset(MANIFEST_FIELDS)
+REMOVED_FIELDS = frozenset({"inputs_schema", "outputs_schema"})
+LEGACY_APTITUDE_FIELDS = MANIFEST_FIELDS | REMOVED_FIELDS
 
 
 class _UniqueKeyLoader(yaml.SafeLoader):
@@ -91,6 +90,10 @@ def load_manifest(skill_root: Path) -> dict[str, Any]:
     if not isinstance(parsed, dict):
         raise ValueError(f"{MANIFEST_FILENAME} must contain a YAML mapping.")
 
+    removed_fields = sorted(set(parsed) & REMOVED_FIELDS)
+    if removed_fields:
+        raise ValueError(f"Fields removed from {MANIFEST_FILENAME}: {', '.join(removed_fields)}. Delete them.")
+
     unknown_fields = sorted(set(parsed) - MANIFEST_FIELDS)
     if unknown_fields:
         fields = ", ".join(unknown_fields)
@@ -132,13 +135,6 @@ def _validate_manifest_types(manifest: Mapping[str, Any]) -> None:
         ):
             raise ValueError(f"{MANIFEST_FILENAME} field 'tags' must be a list of strings.")
 
-    for field in ("inputs_schema", "outputs_schema"):
-        value = manifest.get(field)
-        if value is not None and not isinstance(value, dict):
-            raise ValueError(f"{MANIFEST_FILENAME} field {field!r} must be a mapping.")
-        if value is not None:
-            _validate_json_value(value, field, active_ids=set())
-
     relationships = manifest.get("relationships")
     if relationships is not None and not isinstance(relationships, Mapping):
         raise ValueError(
@@ -171,35 +167,3 @@ def _validate_manifest_types(manifest: Mapping[str, Any]) -> None:
             raise ValueError(
                 f"{MANIFEST_FILENAME} field {field!r} must be a finite number between 0 and 1."
             )
-
-
-def _validate_json_value(value: object, field: str, *, active_ids: set[int]) -> None:
-    """Reject YAML values that cannot be represented safely in JSON reports."""
-    if value is None or isinstance(value, (str, bool, int)):
-        return
-    if isinstance(value, float):
-        if not math.isfinite(value):
-            raise ValueError(f"{MANIFEST_FILENAME} field {field!r} must contain finite numbers.")
-        return
-
-    value_id = id(value)
-    if value_id in active_ids:
-        raise ValueError(f"{MANIFEST_FILENAME} field {field!r} must not contain recursive aliases.")
-    active_ids.add(value_id)
-    try:
-        if isinstance(value, Mapping):
-            for key, nested in value.items():
-                if not isinstance(key, str):
-                    raise ValueError(
-                        f"{MANIFEST_FILENAME} field {field!r} must use string object keys."
-                    )
-                _validate_json_value(nested, f"{field}.{key}", active_ids=active_ids)
-        elif isinstance(value, list):
-            for index, nested in enumerate(value):
-                _validate_json_value(nested, f"{field}[{index}]", active_ids=active_ids)
-        else:
-            raise ValueError(
-                f"{MANIFEST_FILENAME} field {field!r} must contain JSON-compatible values."
-            )
-    finally:
-        active_ids.remove(value_id)

@@ -6,6 +6,7 @@ from pathlib import Path
 
 from publisher.gates.base import PublisherGate, explain_gate_result
 from publisher.domain.models import PublishContext
+from publisher.artifacts.bundle import build_bundle_bytes
 
 
 class DiscoveryGate(PublisherGate):
@@ -51,6 +52,12 @@ class DiscoveryGate(PublisherGate):
             warnings.append(
                 "Discovery found uncategorized files in the skill package; review whether they need explicit handling."
             )
+
+        if not blocking_issues:
+            try:
+                build_bundle_bytes(context)
+            except (OSError, RuntimeError, ValueError) as exc:
+                blocking_issues.append(f"Bundle preflight failed: {exc}")
 
         passed = not blocking_issues
         explanation = explain_gate_result(

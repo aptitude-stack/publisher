@@ -1,5 +1,18 @@
 # Publisher Pipeline
 
+## Registry contract
+
+Input/output schema metadata has been removed. Delete obsolete schema fields from
+`aptitude.yaml`; Publisher no longer accepts or scores them. Tags are optional
+and do not affect metadata completeness, which scores name and description.
+
+Versions use strict SemVer. Dependency constraints require comma-separated
+comparisons (`=`, `==`, `!=`, `<`, `<=`, `>`, `>=`), with a 200-character limit.
+Markers preserve their authored order and duplicates and may contain colons.
+Bundles are checked before external evaluation: at most 5 MiB compressed, 200
+files, and 240 UTF-8 bytes per archive path. Old inspection receipts are refreshed
+before publishing under this contract.
+
 The publisher prepares a local skill folder, evaluates it, builds the registry
 payload, and uploads a deterministic `.tar.zst` bundle.
 
@@ -54,7 +67,7 @@ deeper review.
 2. `identity`
    Builds `slug`, `version`, and `intent`.
 3. `metadata`
-   Extracts metadata, schemas, tags, token estimate, and local quality fields.
+   Extracts metadata, tags, token estimate, and local quality fields.
 4. `security`
    Runs LLM Guard as the authoritative skill-content security source. If LLM
    Guard is not available or does not produce a scored result, publishing is blocked.
@@ -78,7 +91,7 @@ uv pip install -e .
 ```
 
 Security depends on LLM Guard. LLM Guard scans the skill package content:
-the primary `SKILL.md`, metadata fields, schemas, companion markdown, scripts,
+the primary `SKILL.md`, metadata fields, companion markdown, scripts,
 references, and other text files. It checks for prompt injection, secrets, and
 hidden text before the skill can be published.
 

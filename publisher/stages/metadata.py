@@ -48,8 +48,6 @@ class MetadataStage(PublisherStage):
             "name": frontmatter.get("name"),
             "description": frontmatter.get("description"),
             "tags": manifest.get("tags", []),
-            "inputs_schema": manifest.get("inputs_schema"),
-            "outputs_schema": manifest.get("outputs_schema"),
             "token_estimate": manifest.get("token_estimate"),
             "maturity_score": manifest.get("maturity_score"),
             "security_score": manifest.get("security_score"),
@@ -68,8 +66,6 @@ class MetadataStage(PublisherStage):
         context.metadata.name = self._extract_string(metadata_payload, "name")
         context.metadata.description = self._extract_string(metadata_payload, "description")
         context.metadata.tags = self._extract_string_list(metadata_payload, "tags")
-        context.metadata.inputs_schema = self._extract_dict(metadata_payload, "inputs_schema")
-        context.metadata.outputs_schema = self._extract_dict(metadata_payload, "outputs_schema")
         context.metadata.token_estimate = self._estimate_tokens(context)
         context.metadata.maturity_score = self._extract_float(metadata_payload, "maturity_score")
         context.metadata.security_score = self._extract_float(metadata_payload, "security_score")
@@ -99,8 +95,6 @@ class MetadataStage(PublisherStage):
                     "name",
                     "description",
                     "tags",
-                    "inputs_schema",
-                    "outputs_schema",
                     "token_estimate",
                     "maturity_score",
                     "security_score",
@@ -108,9 +102,6 @@ class MetadataStage(PublisherStage):
                 "author_required_fields": [
                     "name",
                     "description",
-                    "tags",
-                    "inputs_schema",
-                    "outputs_schema",
                 ],
                 "publisher_generated_fields": [
                     "token_estimate",
@@ -195,13 +186,6 @@ class MetadataStage(PublisherStage):
             seen.add(stripped)
             cleaned.append(stripped)
         return cleaned
-
-    def _extract_dict(self, payload: dict[str, Any], key: str) -> dict[str, Any] | None:
-        """Return a dict field if present."""
-        value = payload.get(key)
-        if isinstance(value, dict):
-            return value
-        return None
 
     def _extract_int(self, payload: dict[str, Any], key: str) -> int | None:
         """Return an integer field if present."""

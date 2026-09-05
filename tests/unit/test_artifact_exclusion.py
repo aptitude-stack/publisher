@@ -26,8 +26,6 @@ Use this skill for artifact exclusion tests.
     (skill_root / "SKILL.md").with_name("aptitude.yaml").write_text("""version: 0.1.0
 intent: create_skill
 tags: [test]
-inputs_schema: {"type":"object"}
-outputs_schema: {"type":"object"}
 """, encoding="utf-8")
     (skill_root / "notes.txt").write_text("include me", encoding="utf-8")
     artifacts_dir = skill_root / ".publisher_artifacts"

@@ -167,8 +167,6 @@ sidecar:
 version: "0.1.0"
 intent: create_skill
 tags: [python, review]
-inputs_schema: {}
-outputs_schema: {}
 relationships:
   depends_on:
     - slug: python-testing

@@ -64,8 +64,6 @@ class MetadataInfo:
     name: str | None = None
     description: str | None = None
     tags: list[str] = field(default_factory=list)
-    inputs_schema: dict[str, Any] | None = None
-    outputs_schema: dict[str, Any] | None = None
     token_estimate: int | None = None
     word_count: int | None = None
     maturity_score: float | None = None

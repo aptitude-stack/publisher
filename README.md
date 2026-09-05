@@ -33,7 +33,10 @@ Common publish flags:
 
 - `--dry-run`: run the full local flow and skip registry upload
 - `--slug`: override the registry slug
-- `--version`: override the semantic version
+- `--version`: override the semantic version, including prerelease/build suffixes
+  such as `1.2.3-codex` or `1.2.3-gpt-6-astra+build.1` (no leading `v`).
+  Suffixes retain SemVer prerelease ordering; they do not select a target agent
+  or require `agents/openai.yaml` in the skill bundle.
 - `--intent create_skill|publish_version`: choose whether this is a new skill or a new version
 - `--namespace`: target registry namespace, defaulting to `public`
 - `--trust-tier untrusted|internal|verified`: governance trust tier
@@ -277,8 +280,6 @@ A publish-ready source is a local skill folder with required `SKILL.md` and
 version: "0.1.0"
 intent: create_skill
 tags: [python, review]
-inputs_schema: {}
-outputs_schema: {}
 relationships:
   depends_on:
     - slug: python-testing
@@ -316,7 +317,7 @@ The upload bundle is a deterministic `.tar.zst` archive built from the skill fol
 ## Evaluator Configuration
 
 LLM Guard runs locally over the skill package content. It scans the primary
-`SKILL.md`, `aptitude.yaml` metadata, schemas, companion markdown, scripts,
+`SKILL.md`, `aptitude.yaml` metadata, companion markdown, scripts,
 references, and other text files for prompt injection, secrets, and hidden text.
 
 Security publishing decisions depend on LLM Guard. If it is unavailable or

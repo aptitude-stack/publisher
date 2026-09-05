@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 from contextlib import contextmanager
 from dataclasses import dataclass
-import os
 from pathlib import Path
 import sys
 from typing import Any, Literal, Sequence, TypeVar

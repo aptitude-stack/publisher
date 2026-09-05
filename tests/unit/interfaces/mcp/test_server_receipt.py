@@ -22,7 +22,7 @@ def _skill(tmp_path: Path) -> Path:
         "---\nname: example-skill\ndescription: Example\n---\n\n# Instructions\n\nUse this skill.\n",
         encoding="utf-8",
     )
-    (root / "aptitude.yaml").write_text("version: 1.0.0\nintent: create_skill\ntags: [test]\ninputs_schema: {}\noutputs_schema: {}\n")
+    (root / "aptitude.yaml").write_text("version: 1.0.0\nintent: create_skill\ntags: [test]\n")
     return root
 
 

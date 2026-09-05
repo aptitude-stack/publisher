@@ -20,15 +20,10 @@ class MetadataGate(PublisherGate):
 
         if not metadata.name:
             blocking_issues.append("Metadata is missing name.")
+        elif len(metadata.name) > 200:
+            blocking_issues.append("Metadata name must be at most 200 characters.")
         if not metadata.description:
             blocking_issues.append("Metadata is missing description.")
-        if not metadata.tags:
-            blocking_issues.append("Metadata is missing tags.")
-        if metadata.inputs_schema is None:
-            blocking_issues.append("Metadata is missing inputs_schema.")
-        if metadata.outputs_schema is None:
-            blocking_issues.append("Metadata is missing outputs_schema.")
-
         if metadata.token_estimate is None:
             warnings.append("Metadata did not compute token_estimate.")
         elif metadata.token_estimate < 0:
