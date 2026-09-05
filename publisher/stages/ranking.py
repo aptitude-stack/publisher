@@ -107,9 +107,6 @@ class RankingStage(PublisherStage):
         checks = [
             bool(context.metadata.name),
             bool(context.metadata.description),
-            bool(context.metadata.tags),
-            context.metadata.inputs_schema is not None,
-            context.metadata.outputs_schema is not None,
         ]
         score = round(sum(1 for item in checks if item) / len(checks), 2)
         context.ranking.criteria_scores["metadata_completeness"] = score

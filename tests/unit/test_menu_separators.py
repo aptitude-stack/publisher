@@ -543,7 +543,7 @@ def test_batch_upload_wizard_expands_directory_into_skill_paths(
     skill_dir = tmp_path / "example-skill"
     skill_dir.mkdir()
     (skill_dir / "SKILL.md").write_text("# Example\n", encoding="utf-8")
-    (skill_dir / "aptitude.yaml").write_text("version: 1.0.0\nintent: create_skill\ntags: [test]\ninputs_schema: {}\noutputs_schema: {}\n", encoding="utf-8")
+    (skill_dir / "aptitude.yaml").write_text("version: 1.0.0\nintent: create_skill\ntags: [test]\n", encoding="utf-8")
     captured: dict[str, object] = {}
 
     def fake_run_admin_batch_upload(args):

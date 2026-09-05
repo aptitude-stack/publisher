@@ -3,7 +3,3 @@ intent: create_skill
 tags:
 - fixture
 - security
-inputs_schema:
-  type: object
-outputs_schema:
-  type: object

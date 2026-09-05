@@ -49,8 +49,6 @@ def test_discovery_identity_metadata_and_delivery_use_aptitude_manifest(tmp_path
         manifest="""version: 1.2.3
 intent: create_skill
 tags: [python, registry]
-inputs_schema: {type: object}
-outputs_schema: {type: object}
 relationships:
   depends_on:
     - slug: python-base
@@ -67,7 +65,6 @@ relationships:
     assert context.source.parsed_content["manifest"]["intent"] == "create_skill"
     assert context.identity.version == "1.2.3"
     assert context.metadata.tags == ["python", "registry"]
-    assert context.metadata.inputs_schema == {"type": "object"}
     assert context.delivery_payload.relationships["depends_on"] == [
         {"slug": "python-base", "version_constraint": ">=1.0.0,<2.0.0"}
     ]
@@ -102,11 +99,11 @@ def test_identity_cli_values_override_manifest_values(tmp_path) -> None:
         ("version: 1.0.0\nmaturity_score: .nan\n", "finite number"),
         (
             "version: 1.0.0\ninputs_schema: {date: 2026-01-01}\n",
-            "JSON-compatible",
+            "removed",
         ),
         (
             "version: 1.0.0\ninputs_schema: {values: !!set {x: null}}\n",
-            "JSON-compatible",
+            "removed",
         ),
         (
             "version: 1.0.0\ninputs_schema: &schema {self: *schema}\n",

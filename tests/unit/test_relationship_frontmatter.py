@@ -66,8 +66,6 @@ def _context_for_skill(tmp_path, manifest_extra: str = ""):
         """version: 1.0.0
 intent: create_skill
 tags: [relationships, registry]
-inputs_schema: {type: object}
-outputs_schema: {type: object}
 """
         + (f"{manifest}\n" if manifest else ""),
         encoding="utf-8",

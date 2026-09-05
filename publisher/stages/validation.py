@@ -9,7 +9,7 @@ from typing import Any
 from publisher.domain.models import PublishContext
 from publisher.frontmatter import parse_skill_markdown
 from publisher.integrations.llm_validation import run_llm_skill_validation
-from publisher.manifest import legacy_aptitude_fields, load_manifest
+from publisher.manifest import REMOVED_FIELDS, legacy_aptitude_fields, load_manifest
 from publisher.relationships import normalize_relationships
 from publisher.stages.base import PublisherStage
 
@@ -216,7 +216,9 @@ class ValidationStage(PublisherStage):
 
         for field in legacy_aptitude_fields(frontmatter):
             context.validation.errors.append(
-                f"Legacy Aptitude field {field!r} must be moved from SKILL.md frontmatter to aptitude.yaml."
+                f"Schema field {field!r} was removed; delete it from SKILL.md."
+                if field.split(".")[-1] in REMOVED_FIELDS
+                else f"Legacy Aptitude field {field!r} must be moved from SKILL.md frontmatter to aptitude.yaml."
             )
 
         try:

@@ -10,6 +10,9 @@ import subprocess
 from publisher.domain.models import PublishContext
 
 _BUNDLE_ROOT = "skill-bundle"
+MAX_BUNDLE_SIZE_BYTES = 5 * 1024 * 1024
+MAX_BUNDLE_FILE_COUNT = 200
+MAX_BUNDLE_PATH_LENGTH_BYTES = 240
 
 
 def build_bundle_bytes(context: PublishContext) -> bytes:
@@ -23,8 +26,17 @@ def build_bundle_bytes(context: PublishContext) -> bytes:
         if ".publisher_artifacts" in relative_path.parts:
             continue
         archive_path = f"{_BUNDLE_ROOT}/{relative_path.as_posix()}"
+        if "\\" in archive_path:
+            raise ValueError(f"Bundle path uses an unsafe separator: {archive_path}")
+        if len(archive_path.encode("utf-8")) > MAX_BUNDLE_PATH_LENGTH_BYTES:
+            raise ValueError(f"Bundle path exceeds {MAX_BUNDLE_PATH_LENGTH_BYTES} bytes: {archive_path}")
+        if len(entries) >= MAX_BUNDLE_FILE_COUNT:
+            raise ValueError(f"Bundle exceeds {MAX_BUNDLE_FILE_COUNT} files.")
         entries.append((archive_path, path.read_bytes()))
-    return _compress_entries(entries)
+    bundle = _compress_entries(entries)
+    if len(bundle) > MAX_BUNDLE_SIZE_BYTES:
+        raise ValueError(f"Compressed bundle exceeds {MAX_BUNDLE_SIZE_BYTES} bytes.")
+    return bundle
 
 
 def _compress_entries(entries: list[tuple[str, bytes]]) -> bytes:

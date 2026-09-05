@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any, Mapping
 
+from publisher.versioning import SEMVER_CORE, SEMVER_PATTERN
 
 RELATIONSHIP_FAMILIES = (
     "depends_on",
@@ -18,22 +19,11 @@ _DEPENDENCY_FIELDS = frozenset(
 )
 _EXACT_FIELDS = frozenset({"slug", "version"})
 _SLUG_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,127})$")
-_SEMVER_PATTERN = re.compile(
-    r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)"
-    r"(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?"
-    r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$"
-)
 _VERSION_CONSTRAINT_PATTERN = re.compile(
-    r"^\s*(?:==|!=|<=|>=|<|>)?\s*"
-    r"(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)"
-    r"(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?"
-    r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?"
-    r"(?:\s*,\s*(?:==|!=|<=|>=|<|>)?\s*"
-    r"(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)"
-    r"(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?"
-    r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?)*\s*$"
+    rf"[ \t]*(?:==|=|!=|<=|>=|<|>)[ \t]*{SEMVER_CORE}"
+    rf"(?:[ \t]*,[ \t]*(?:==|=|!=|<=|>=|<|>)[ \t]*{SEMVER_CORE})*[ \t]*"
 )
-_MARKER_PATTERN = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
+_MARKER_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$")
 
 
 def normalize_relationships(value: object) -> dict[str, list[dict[str, Any]]]:
@@ -176,7 +166,7 @@ def _optional_semver(value: object, *, family: str, index: int) -> str | None:
     if value is None:
         return None
     version = str(value).strip()
-    if _SEMVER_PATTERN.fullmatch(version) is None:
+    if SEMVER_PATTERN.fullmatch(version) is None:
         raise ValueError(
             f"relationships.{family}[{index}].version must be a semantic version."
         )
@@ -190,8 +180,8 @@ def _optional_version_constraint(value: object, *, family: str, index: int) -> s
         raise ValueError(
             f"relationships.{family}[{index}].version_constraint must be a string."
         )
-    stripped = value.strip()
-    if not stripped or _VERSION_CONSTRAINT_PATTERN.fullmatch(stripped) is None:
+    stripped = value.strip(" \t")
+    if not stripped or len(stripped) > 200 or _VERSION_CONSTRAINT_PATTERN.fullmatch(stripped) is None:
         raise ValueError(
             f"relationships.{family}[{index}].version_constraint must be a "
             "comma-separated list of semver comparators."
@@ -205,21 +195,9 @@ def _normalize_markers(value: object, *, family: str, index: int) -> list[str]:
     if not isinstance(value, list):
         raise ValueError(f"relationships.{family}[{index}].markers must be a list.")
 
-    markers: list[str] = []
-    seen: set[str] = set()
     for marker in value:
-        if not isinstance(marker, str):
-            raise ValueError(
-                f"relationships.{family}[{index}].markers must contain strings."
-            )
-        stripped = marker.strip()
-        if not stripped:
-            continue
-        if _MARKER_PATTERN.fullmatch(stripped) is None:
+        if not isinstance(marker, str) or _MARKER_PATTERN.fullmatch(marker) is None:
             raise ValueError(
                 f"relationships.{family}[{index}].markers contains an invalid marker."
             )
-        if stripped not in seen:
-            seen.add(stripped)
-            markers.append(stripped)
-    return markers
+    return list(value)

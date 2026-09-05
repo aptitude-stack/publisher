@@ -39,10 +39,10 @@ class InspectSkillInput(_StrictInput):
     version: str | None = None
     intent: Intent | None = None
     trust_tier: TrustTier = "untrusted"
-    namespace: str = Field(default="public", min_length=1)
+    namespace: str = Field(default="public", min_length=1, max_length=128)
     artifact_origin: ArtifactOrigin = "internal"
-    policy_pack_slug: str | None = None
-    publisher_identity: str | None = None
+    policy_pack_slug: str | None = Field(default=None, min_length=1, max_length=128)
+    publisher_identity: str | None = Field(default=None, min_length=1, max_length=200)
     response_format: ResponseFormat = Field(
         default=ResponseFormat.MARKDOWN,
         description="Response format: markdown, json, or toon.",

@@ -50,8 +50,6 @@ class DeliveryStage(PublisherStage):
             "name": context.metadata.name,
             "description": context.metadata.description,
             "tags": context.metadata.tags,
-            "inputs_schema": context.metadata.inputs_schema,
-            "outputs_schema": context.metadata.outputs_schema,
             "token_estimate": context.metadata.token_estimate,
             "maturity_score": context.metadata.maturity_score,
             "security_score": context.security.score,
