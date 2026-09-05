@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from publisher.artifacts.report import report_path
+
 import json
 from pathlib import Path
 from typing import Any
@@ -17,9 +19,10 @@ def _skill(tmp_path: Path) -> Path:
     root = tmp_path / "example-skill"
     root.mkdir()
     (root / "SKILL.md").write_text(
-        "---\nname: example-skill\ndescription: Example\nmetadata:\n  version: 1.0.0\n  intent: create_skill\n---\n\n# Instructions\n\nUse this skill.\n",
+        "---\nname: example-skill\ndescription: Example\n---\n\n# Instructions\n\nUse this skill.\n",
         encoding="utf-8",
     )
+    (root / "aptitude.yaml").write_text("version: 1.0.0\nintent: create_skill\ntags: [test]\ninputs_schema: {}\noutputs_schema: {}\n")
     return root
 
 
@@ -30,7 +33,7 @@ def _context(root: Path, *, decision: str = "allow") -> PublishContext:
             slug_override="example-skill",
             intent_override="create_skill",
         ),
-        artifacts_dir=str(root / ".publisher_artifacts"),
+        report_path=str(report_path(root)),
     )
     context.inventory.skill_root = str(root)
     context.identity.slug = "example-skill"
@@ -101,7 +104,7 @@ def test_inspect_defaults_to_markdown_and_refreshes_receipt(
     assert output.startswith("# Aptitude Publisher")
     assert "Overall: 9.0/10" in output
     assert "Refreshed: `True`" in output
-    assert (root / ".publisher_artifacts" / "inspection-receipt.json").is_file()
+    assert (report_path(root)).is_file()
 
 
 def test_fresh_receipt_reuses_allowed_evidence_and_uses_registry_scores(
@@ -206,11 +209,11 @@ def test_tampered_well_typed_receipt_payload_refreshes_evidence(
     server.PublisherMcpAdapter(
         pipeline_factory=lambda: inspect_pipeline
     ).inspect_skill(InspectSkillInput(skill_path=root))
-    receipt_path = root / ".publisher_artifacts" / "inspection-receipt.json"
-    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    receipt_path = report_path(root)
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))["inspection_receipt"]
     receipt["final_payload"]["slug"] = "other-skill"
     receipt["final_payload"]["governance"]["namespace"] = "private"
-    receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+    receipt_path.write_text(json.dumps({"schema_version": 1, "inspection_receipt": receipt}), encoding="utf-8")
 
     publish_pipeline = _Pipeline(_context(root))
     monkeypatch.setenv("APTITUDE_PUBLISH_TOKEN", "publish-secret")
@@ -378,11 +381,11 @@ def test_tampered_blocked_receipt_cannot_become_reusable_allow(
     server.PublisherMcpAdapter(
         pipeline_factory=lambda: inspect_pipeline
     ).inspect_skill(InspectSkillInput(skill_path=root))
-    receipt_path = root / ".publisher_artifacts" / "inspection-receipt.json"
-    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    receipt_path = report_path(root)
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))["inspection_receipt"]
     receipt["status"] = "ready"
     receipt["evidence"]["ranking"]["publish_decision"] = "allow"
-    receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+    receipt_path.write_text(json.dumps({"schema_version": 1, "inspection_receipt": receipt}), encoding="utf-8")
 
     publish_pipeline = _Pipeline(_context(root, decision="block"))
     monkeypatch.setattr(server, "get_existing_skill", lambda **_: None)
@@ -423,10 +426,10 @@ def test_tampered_signed_metadata_receipt_refreshes_evidence(
     server.PublisherMcpAdapter(
         pipeline_factory=lambda: inspect_pipeline
     ).inspect_skill(InspectSkillInput(skill_path=root))
-    receipt_path = root / ".publisher_artifacts" / "inspection-receipt.json"
-    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    receipt_path = report_path(root)
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))["inspection_receipt"]
     receipt["final_payload"]["metadata"]["name"] = "Tampered"
-    receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+    receipt_path.write_text(json.dumps({"schema_version": 1, "inspection_receipt": receipt}), encoding="utf-8")
 
     publish_pipeline = _Pipeline(_context(root))
     monkeypatch.setattr(server, "get_existing_skill", lambda **_: None)
@@ -464,10 +467,10 @@ def test_expired_receipt_runs_full_pipeline_and_refreshes_it(
     server.PublisherMcpAdapter(
         pipeline_factory=lambda: inspect_pipeline
     ).inspect_skill(InspectSkillInput(skill_path=root))
-    receipt_path = root / ".publisher_artifacts" / "inspection-receipt.json"
-    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    receipt_path = report_path(root)
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))["inspection_receipt"]
     receipt["expires_at"] = "2000-01-01T00:00:00Z"
-    receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+    receipt_path.write_text(json.dumps({"schema_version": 1, "inspection_receipt": receipt}), encoding="utf-8")
 
     pipeline = _Pipeline(_context(root))
     monkeypatch.setenv("APTITUDE_PUBLISH_TOKEN", "publish-secret")
@@ -503,8 +506,8 @@ def test_corrupt_receipt_runs_full_pipeline_and_refreshes_it(
     from publisher.interfaces.mcp import server
 
     root = _skill(tmp_path)
-    receipt_path = root / ".publisher_artifacts" / "inspection-receipt.json"
-    receipt_path.parent.mkdir()
+    receipt_path = report_path(root)
+    receipt_path.parent.mkdir(parents=True, exist_ok=True)
     receipt_path.write_text("{not-json", encoding="utf-8")
     pipeline = _Pipeline(_context(root))
     monkeypatch.setattr(server, "build_bundle_bytes", lambda _: b"bundle")
@@ -546,10 +549,10 @@ def test_semantically_corrupt_receipt_is_a_cache_miss_and_refreshes_it(
     server.PublisherMcpAdapter(
         pipeline_factory=lambda: inspect_pipeline
     ).inspect_skill(InspectSkillInput(skill_path=root))
-    receipt_path = root / ".publisher_artifacts" / "inspection-receipt.json"
-    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    receipt_path = report_path(root)
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))["inspection_receipt"]
     receipt["final_payload"]["metadata"] = ["not", "a", "mapping"]
-    receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+    receipt_path.write_text(json.dumps({"schema_version": 1, "inspection_receipt": receipt}), encoding="utf-8")
 
     pipeline = _Pipeline(_context(root))
     monkeypatch.setenv("APTITUDE_PUBLISH_TOKEN", "publish-secret")

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from publisher.gates.base import PublisherGate, explain_gate_result
 from publisher.domain.models import PublishContext
 
@@ -19,13 +17,6 @@ class ValidationGate(PublisherGate):
         warnings: list[str] = list(context.validation.warnings)
 
         validation = context.validation
-
-        if validation.artifact_path is None:
-            blocking_issues.append("Validation did not write an artifact.")
-        elif not Path(validation.artifact_path).is_file():
-            blocking_issues.append(
-                f"Validation artifact was recorded but not found: {validation.artifact_path}"
-            )
 
         if not validation.checks_run:
             blocking_issues.append("Validation did not record any executed checks.")
@@ -52,7 +43,6 @@ class ValidationGate(PublisherGate):
             data={
                 "stage_name": self.stage_name,
                 "passed": validation.passed,
-                "artifact_path": validation.artifact_path,
                 "error_count": len(validation.errors),
                 "warning_count": len(validation.warnings),
             },
@@ -62,7 +52,6 @@ class ValidationGate(PublisherGate):
             status="passed" if passed else "failed",
             data={
                 "passed": validation.passed,
-                "artifact_path": validation.artifact_path,
                 "blocking_issues": blocking_issues,
                 "warnings": warnings,
             },

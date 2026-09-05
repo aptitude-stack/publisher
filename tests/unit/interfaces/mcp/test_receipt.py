@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from publisher.artifacts.report import report_path
+
 import hashlib
 import json
 from datetime import datetime, timedelta, timezone
@@ -10,7 +12,6 @@ import pytest
 from publisher.domain.models import PublishContext, SkillSource
 from publisher.interfaces.mcp import receipt as receipt_module
 from publisher.interfaces.mcp.receipt import (
-    INSPECTION_RECEIPT_FILENAME,
     config_fingerprint,
     load_inspection_receipt,
     receipt_matches,
@@ -28,7 +29,7 @@ def _context(skill_root: Path) -> PublishContext:
             namespace="public",
             artifact_origin="internal",
         ),
-        artifacts_dir=str(skill_root / ".publisher_artifacts"),
+        report_path=str(report_path(skill_root)),
     )
     context.inventory.skill_root = str(skill_root)
     context.identity.slug = "example-skill"
@@ -81,15 +82,15 @@ def test_receipt_is_canonical_atomic_and_credential_values_are_not_serialized(
     receipt = write_inspection_receipt(
         _context(skill_root), bundle_bytes=b"bundle", now=now
     )
-    receipt_path = skill_root / ".publisher_artifacts" / INSPECTION_RECEIPT_FILENAME
+    receipt_path = report_path(skill_root)
     raw = receipt_path.read_text(encoding="utf-8")
 
     assert receipt["schema_version"] == 1
     assert receipt["source_bundle_sha256"] == hashlib.sha256(b"bundle").hexdigest()
     assert receipt["created_at"] == "2026-08-23T10:00:00Z"
     assert receipt["expires_at"] == "2026-08-23T11:00:00Z"
-    assert json.loads(raw) == receipt
-    assert raw == json.dumps(receipt, sort_keys=True, separators=(",", ":")) + "\n"
+    assert json.loads(raw)["inspection_receipt"] == receipt
+    assert raw == json.dumps(json.loads(raw), sort_keys=True, separators=(",", ":")) + "\n"
     assert "super-secret" not in raw
     assert receipt["config_fingerprint"]["credentials"]["OPENAI_API_KEY"] is True
 
@@ -101,7 +102,7 @@ def test_signed_receipt_verifies_token_and_payload_integrity(tmp_path: Path) -> 
     receipt = write_inspection_receipt(
         _context(skill_root), bundle_bytes=b"bundle", publish_token=token
     )
-    receipt_path = skill_root / ".publisher_artifacts" / INSPECTION_RECEIPT_FILENAME
+    receipt_path = report_path(skill_root)
     raw = receipt_path.read_text(encoding="utf-8")
 
     assert isinstance(receipt["mac"], str)
@@ -112,7 +113,7 @@ def test_signed_receipt_verifies_token_and_payload_integrity(tmp_path: Path) -> 
     assert load_inspection_receipt(receipt_path, publish_token="rotated-token") is None
 
     receipt["evidence"]["security"]["score"] = 0.1
-    receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+    receipt_path.write_text(json.dumps({"schema_version": 1, "inspection_receipt": receipt}), encoding="utf-8")
     assert load_inspection_receipt(receipt_path, publish_token=token) is None
 
 
@@ -158,7 +159,7 @@ def test_receipt_load_rejects_expired_corrupt_and_mismatched_inputs(tmp_path: Pa
     skill_root.mkdir()
     context = _context(skill_root)
     receipt = write_inspection_receipt(context, bundle_bytes=b"bundle", now=now)
-    receipt_path = skill_root / ".publisher_artifacts" / INSPECTION_RECEIPT_FILENAME
+    receipt_path = report_path(skill_root)
 
     assert load_inspection_receipt(receipt_path, now=now + timedelta(minutes=59)) == receipt
     assert load_inspection_receipt(receipt_path, now=now + timedelta(hours=1)) is None
@@ -180,15 +181,15 @@ def test_receipt_load_rejects_semantic_corruption_and_extended_ttl(tmp_path: Pat
     skill_root.mkdir()
     context = _context(skill_root)
     receipt = write_inspection_receipt(context, bundle_bytes=b"bundle", now=now)
-    receipt_path = skill_root / ".publisher_artifacts" / INSPECTION_RECEIPT_FILENAME
+    receipt_path = report_path(skill_root)
 
     receipt["scores"]["overall_score"] = {"not": "a score"}
-    receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+    receipt_path.write_text(json.dumps({"schema_version": 1, "inspection_receipt": receipt}), encoding="utf-8")
     assert load_inspection_receipt(receipt_path, now=now) is None
 
     receipt = write_inspection_receipt(context, bundle_bytes=b"bundle", now=now)
     receipt["expires_at"] = "2026-08-23T12:00:00Z"
-    receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+    receipt_path.write_text(json.dumps({"schema_version": 1, "inspection_receipt": receipt}), encoding="utf-8")
     assert load_inspection_receipt(receipt_path, now=now + timedelta(minutes=59)) is None
 
 
@@ -196,16 +197,16 @@ def test_receipt_load_rejects_invalid_decisions_and_status_mismatch(tmp_path: Pa
     skill_root = tmp_path / "example-skill"
     skill_root.mkdir()
     context = _context(skill_root)
-    receipt_path = skill_root / ".publisher_artifacts" / INSPECTION_RECEIPT_FILENAME
+    receipt_path = report_path(skill_root)
 
     receipt = write_inspection_receipt(context, bundle_bytes=b"bundle")
     receipt["evidence"]["ranking"]["publish_decision"] = "warn"
-    receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+    receipt_path.write_text(json.dumps({"schema_version": 1, "inspection_receipt": receipt}), encoding="utf-8")
     assert load_inspection_receipt(receipt_path) is None
 
     receipt = write_inspection_receipt(context, bundle_bytes=b"bundle")
     receipt["status"] = "blocked"
-    receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+    receipt_path.write_text(json.dumps({"schema_version": 1, "inspection_receipt": receipt}), encoding="utf-8")
     assert load_inspection_receipt(receipt_path) is None
 
 
@@ -256,7 +257,7 @@ def test_receipt_write_preserves_existing_file_when_replace_fails(
     skill_root.mkdir()
     context = _context(skill_root)
     write_inspection_receipt(context, bundle_bytes=b"original")
-    receipt_path = skill_root / ".publisher_artifacts" / INSPECTION_RECEIPT_FILENAME
+    receipt_path = report_path(skill_root)
     original = receipt_path.read_bytes()
 
     def fail_replace(*_: object) -> None:
@@ -268,3 +269,9 @@ def test_receipt_write_preserves_existing_file_when_replace_fails(
 
     assert receipt_path.read_bytes() == original
     assert not list(receipt_path.parent.glob(f".{receipt_path.name}.*"))
+
+
+def test_invalid_utf8_report_is_a_cache_miss(tmp_path):
+    path = tmp_path / "report.json"
+    path.write_bytes(b"\xff")
+    assert load_inspection_receipt(path) is None

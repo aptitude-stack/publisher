@@ -148,20 +148,6 @@ class DeliveryPayload:
 
 
 @dataclass(slots=True)
-class CompressionInfo:
-    """Phase 7 output: compressed delivery package details."""
-
-    algorithm: str | None = None
-    compressed_artifact_path: str | None = None
-    manifest_artifact_path: str | None = None
-    available: bool = False
-    uncompressed_size: int | None = None
-    compressed_size: int | None = None
-    compression_ratio: float | None = None
-    notes: list[str] = field(default_factory=list)
-
-
-@dataclass(slots=True)
 class StageSnapshot:
     """Stores per-stage results for traceability."""
 
@@ -188,7 +174,7 @@ class PublishContext:
     """Mutable pipeline state shared across publisher stages."""
 
     source: SkillSource
-    artifacts_dir: str | None = None
+    report_path: str | None = None
     inventory: SkillInventory = field(default_factory=SkillInventory)
     identity: IdentityInfo = field(default_factory=IdentityInfo)
     metadata: MetadataInfo = field(default_factory=MetadataInfo)
@@ -197,7 +183,6 @@ class PublishContext:
     validation: ValidationInfo = field(default_factory=ValidationInfo)
     performance_exam: PerformanceExamInfo = field(default_factory=PerformanceExamInfo)
     delivery_payload: DeliveryPayload = field(default_factory=DeliveryPayload)
-    compression: CompressionInfo = field(default_factory=CompressionInfo)
     stage_history: list[StageSnapshot] = field(default_factory=list)
     gate_history: list[GateResult] = field(default_factory=list)
 

@@ -1,0 +1,21 @@
+version: 0.0.1
+intent: create_skill
+tags:
+- fixture
+- quality
+inputs_schema:
+  type: object
+  properties:
+    request:
+      type: string
+  required:
+  - request
+outputs_schema:
+  type: object
+  properties:
+    checklist:
+      type: array
+      items:
+        type: string
+  required:
+  - checklist

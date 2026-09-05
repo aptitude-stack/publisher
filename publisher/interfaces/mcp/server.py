@@ -14,6 +14,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
 from publisher.artifacts.bundle import build_bundle_bytes
+from publisher.artifacts.report import report_path
 from publisher.app.pipeline import PublisherPipeline
 from publisher.domain.models import (
     GateResult,
@@ -30,7 +31,6 @@ from publisher.interfaces.mcp.models import (
     RegistrySummary,
 )
 from publisher.interfaces.mcp.receipt import (
-    INSPECTION_RECEIPT_FILENAME,
     config_fingerprint,
     load_inspection_receipt,
     receipt_matches,
@@ -325,8 +325,8 @@ def create_server(adapter: PublisherMcpAdapter | None = None) -> FastMCP:
         mcp = FastMCP(
             "aptitude_publisher_mcp",
             instructions=(
-                "Inspect a local skill before publishing it. Inspection writes local "
-                ".publisher_artifacts; publishing additionally changes registry state "
+                "Inspect a local skill before publishing it. Inspection writes a report to "
+                "the local Publisher cache; publishing additionally changes registry state "
                 "and requires explicit slug, intent, and confirmation."
             ),
         )
@@ -365,7 +365,7 @@ def create_server(adapter: PublisherMcpAdapter | None = None) -> FastMCP:
                     "aptitude_publisher_inspect_skill",
                     "aptitude_publisher_publish_skill",
                 ],
-                "inspect_writes": ".publisher_artifacts",
+                "inspect_writes": "local Publisher cache report",
                 "publish_requires": ["slug", "intent", "confirm_upload=true"],
             },
             indent=2,
@@ -415,7 +415,7 @@ def _evaluation_summary(context: PublishContext) -> EvaluationSummary:
         maturity_score=context.metadata.maturity_score,
         overall_score=context.ranking.total_score,
         overall_label=context.ranking.label,
-        artifacts_dir=context.artifacts_dir,
+        report_path=context.report_path,
     )
 
 
@@ -458,8 +458,7 @@ def _render_error(message: str, response_format: ResponseFormat) -> str:
 
 
 def _receipt_path(skill_path: Path) -> Path:
-    root = skill_path if skill_path.is_dir() else skill_path.parent
-    return root / ".publisher_artifacts" / INSPECTION_RECEIPT_FILENAME
+    return report_path(skill_path)
 
 
 def _receipt_identity(
@@ -523,7 +522,7 @@ def _context_from_receipt(
             policy_pack_slug=governance.get("policy_pack_slug"),
             publisher_identity=governance.get("publisher_identity"),
         ),
-        artifacts_dir=str(root / ".publisher_artifacts"),
+        report_path=str(report_path(root)),
     )
     context.inventory.skill_root = str(root)
     identity = receipt.get("identity", {})

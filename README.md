@@ -7,7 +7,7 @@
 ![Ruff](https://img.shields.io/badge/ruff-D7FF64?style=for-the-badge&logo=ruff&logoColor=111111)
 ![Last Commit](https://img.shields.io/github/last-commit/aptitude-stack/publisher?style=for-the-badge)
 
-`Aptitude Publisher` is the review-first CLI for validating local Aptitude skill folders and publishing approved versions to the Aptitude Registry. It reads a skill's `SKILL.md` frontmatter, runs validation and evaluator gates, builds a deterministic `.tar.zst` artifact, and uploads the artifact plus registry metadata.
+`Aptitude Publisher` is the review-first CLI for validating local Aptitude skill folders and publishing approved versions to the Aptitude Registry. It reads standard skill fields from `SKILL.md` and Aptitude publishing metadata from the required `aptitude.yaml` sidecar, runs validation and evaluator gates, builds a deterministic `.tar.zst` artifact, and uploads the artifact plus registry metadata.
 
 The system is intentionally split in three:
 
@@ -95,9 +95,13 @@ Example MCP client configuration:
 The server exposes:
 
 - `aptitude_publisher_inspect_skill`: runs the full local evaluation pipeline
-  and writes trace files below the skill's `.publisher_artifacts/` directory.
+  and returns the latest evaluation report path.
 - `aptitude_publisher_publish_skill`: reruns evaluation and uploads only when
   the caller supplies an explicit slug, intent, and `confirm_upload=true`.
+
+The evaluation response exposes `report_path`; `artifacts_dir` is no longer a
+response field. The report contains normalized stage, gate, and evaluator
+evidence, plus a nested signed inspection receipt when available.
 
 Use inspect first, review its validation, security, performance, ranking, and
 identity result, then ask for confirmation before publish. Publish credentials
@@ -265,15 +269,55 @@ uv run aptitude-publisher publish /path/to/skill \
 
 ## Skill Folder Contract
 
-A publish-ready source is a local skill folder with a required `SKILL.md` file. The publisher reads `SKILL.md` frontmatter as the source of truth for identity, version, public metadata, schemas, and authored relationships.
+A publish-ready source is a local skill folder with required `SKILL.md` and
+`aptitude.yaml` files. `SKILL.md` keeps the standard `name`, `description`,
+`license`, and `compatibility` fields. Aptitude metadata is a flat sidecar:
 
-Generated files under `.publisher_artifacts/` are local trace artifacts. They are not source files to author, and they are excluded from the immutable upload bundle.
+```yaml
+version: "0.1.0"
+intent: create_skill
+tags: [python, review]
+inputs_schema: {}
+outputs_schema: {}
+relationships:
+  depends_on:
+    - slug: python-testing
+      version: "0.1.2"
+token_estimate: 1200
+maturity_score: 0.8
+security_score: 0.9
+```
+
+`relationships` and the numeric hints are optional; omitted relationship
+families default to empty lists. CLI and MCP values override sidecar identity
+values. `agents/openai.yaml`, when present, remains independent and unchanged.
+Duplicate YAML keys, unknown fields, invalid types, malformed relationship
+selectors, and known Aptitude fields left in legacy `SKILL.md` frontmatter are
+rejected. Move legacy fields manually to `aptitude.yaml` rather than relying on
+fallback parsing.
+
+The publisher retains one latest JSON report per canonical skill directory. Its
+path is `<cache-root>/aptitude/publisher/<sha256(canonical-absolute-skill-directory)>.json`,
+where `<cache-root>` is the absolute `XDG_CACHE_HOME` when configured or
+`~/.cache` otherwise. The report has `schema_version`, `skill_root`,
+`updated_at`, `status`, `stages`, `gates`, `evidence`, `warnings`, `error`, and
+`inspection_receipt`. Status is `running`, `ready`, `blocked`, or `failed`.
+Writes are atomic and owner-only. Raw evaluator transcripts, credentials,
+environment dumps, and temporary paths are not retained; evaluator copies and
+working directories are temporary, outside the source tree, and cleaned after
+success, failure, or timeout.
+
+Existing `.publisher_artifacts/` directories are preserved historical content,
+excluded from inventory and the immutable upload bundle, and never read or
+written by the current publisher.
 
 The upload bundle is a deterministic `.tar.zst` archive built from the skill folder after publisher gates complete. Registry clients later install from that stored artifact rather than from the publisher's local working tree.
 
 ## Evaluator Configuration
 
-LLM Guard runs locally over the skill package content. It scans the primary `SKILL.md`, metadata fields, schemas, companion markdown, scripts, references, and other text files for prompt injection, secrets, and hidden text.
+LLM Guard runs locally over the skill package content. It scans the primary
+`SKILL.md`, `aptitude.yaml` metadata, schemas, companion markdown, scripts,
+references, and other text files for prompt injection, secrets, and hidden text.
 
 Security publishing decisions depend on LLM Guard. If it is unavailable or
 fails, the security stage blocks publishing because security has no local
@@ -303,11 +347,11 @@ export UPSKILL_TESTS_PATH=/absolute/path/to/upskill-tests.json
 
 Set `UPSKILL_BASE_URL` only for a custom OpenAI-compatible endpoint. Missing,
 partial, empty, or failed Upskill evidence blocks publishing and is recorded in
-the evaluator artifact. A scored but non-beneficial result remains reviewable
-quality evidence rather than an evaluator outage.
+the latest report. A scored but non-beneficial result remains reviewable quality
+evidence rather than an evaluator outage.
 
 For a live smoke check, run `aptitude-publisher inspect /path/to/skill` with
-the variables above, then verify the performance artifact records
+the variables above, then verify the report's performance evidence records
 `status: scored`, `gpt-4.1-mini`, nonzero token metrics, and no validation
 errors. This sends skill and test content to OpenAI; see
 [OpenAI API data controls](https://developers.openai.com/api/docs/guides/your-data#default-usage-policies-by-endpoint).
@@ -316,7 +360,8 @@ errors. This sends skill and test content to OpenAI; see
 
 - guided inspect, publish, and admin batch-upload wizard
 - skill-root discovery from local folders or explicit paths
-- registry identity derivation from `SKILL.md` frontmatter
+- registry identity derivation from `SKILL.md` `name` and `aptitude.yaml`
+  `version`/`intent`
 - create-skill and publish-version intent handling
 - relationship normalization and registry existence alerts
 - metadata extraction for public skill facts and generated estimates

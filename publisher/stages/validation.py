@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import re
 from pathlib import Path
 from typing import Any
@@ -10,7 +9,8 @@ from typing import Any
 from publisher.domain.models import PublishContext
 from publisher.frontmatter import parse_skill_markdown
 from publisher.integrations.llm_validation import run_llm_skill_validation
-from publisher.relationships import normalize_relationships, relationship_frontmatter_value
+from publisher.manifest import legacy_aptitude_fields, load_manifest
+from publisher.relationships import normalize_relationships
 from publisher.stages.base import PublisherStage
 
 
@@ -31,17 +31,17 @@ class ValidationStage(PublisherStage):
         body = ""
         if skill_file.exists():
             frontmatter, body = self._parse_skill_markdown(context, skill_file)
-            self._validate_frontmatter(context, skill_root=skill_root, frontmatter=frontmatter)
+            manifest = self._load_manifest(context, skill_root)
+            self._validate_frontmatter(
+                context,
+                skill_root=skill_root,
+                frontmatter=frontmatter,
+                manifest=manifest,
+            )
             self._validate_body(context, body=body)
             self._validate_with_llm(context, skill_root=skill_root, skill_file=skill_file)
 
         context.validation.passed = len(context.validation.errors) == 0
-        artifact_path = self._write_validation_artifact(
-            context,
-            skill_root=skill_root,
-            skill_file=skill_file,
-            frontmatter=frontmatter,
-        )
         context.add_snapshot(
             stage_name=self.name,
             status="completed" if context.validation.passed else "failed",
@@ -49,7 +49,6 @@ class ValidationStage(PublisherStage):
                 "passed": context.validation.passed,
                 "errors": context.validation.errors,
                 "warnings": context.validation.warnings,
-                "artifact_path": artifact_path,
             },
             messages=[
                 "Validation stage checked Anthropic skill structure and frontmatter rules.",
@@ -80,7 +79,10 @@ class ValidationStage(PublisherStage):
             "frontmatter_description_trigger_guidance",
             "frontmatter_no_xml_angle_brackets",
             "compatibility_length_if_present",
-            "relationships_frontmatter_shape",
+            "aptitude_manifest_present",
+            "aptitude_manifest_shape",
+            "legacy_aptitude_frontmatter_absent",
+            "relationships_manifest_shape",
             "relationships_local_targets_warn_if_missing",
             "body_present",
             "body_instructions_heading",
@@ -153,6 +155,7 @@ class ValidationStage(PublisherStage):
         *,
         skill_root: Path,
         frontmatter: dict[str, Any],
+        manifest: dict[str, Any],
     ) -> None:
         """Validate Anthropic frontmatter requirements."""
         if not frontmatter:
@@ -211,18 +214,32 @@ class ValidationStage(PublisherStage):
                     "Frontmatter compatibility must be a string between 1 and 500 characters when provided."
                 )
 
-        try:
-            relationships = normalize_relationships(
-                relationship_frontmatter_value(frontmatter)
+        for field in legacy_aptitude_fields(frontmatter):
+            context.validation.errors.append(
+                f"Legacy Aptitude field {field!r} must be moved from SKILL.md frontmatter to aptitude.yaml."
             )
+
+        try:
+            relationships = normalize_relationships(manifest.get("relationships"))
         except ValueError as exc:
-            context.validation.errors.append(f"Relationships frontmatter is invalid: {exc}")
+            context.validation.errors.append(f"aptitude.yaml relationships are invalid: {exc}")
         else:
             self._validate_relationship_targets(
                 context,
                 skill_root=skill_root,
                 relationships=relationships,
             )
+
+    def _load_manifest(self, context: PublishContext, skill_root: Path) -> dict[str, Any]:
+        """Load the required metadata sidecar and retain it for downstream stages."""
+        try:
+            manifest = load_manifest(skill_root)
+        except ValueError as exc:
+            context.validation.errors.append(str(exc))
+            manifest = {}
+        context.source.parsed_content["manifest"] = manifest
+        context.source.parsed_content["manifest_file"] = str(skill_root / "aptitude.yaml")
+        return manifest
 
     def _validate_relationship_targets(
         self,
@@ -316,33 +333,3 @@ class ValidationStage(PublisherStage):
         context.validation.errors.extend(f"LLM: {item}" for item in result.errors)
         context.validation.warnings.extend(f"LLM: {item}" for item in result.warnings)
         context.validation.notes.extend(f"LLM: {item}" for item in result.notes)
-
-    def _write_validation_artifact(
-        self,
-        context: PublishContext,
-        *,
-        skill_root: Path,
-        skill_file: Path,
-        frontmatter: dict[str, Any],
-    ) -> str:
-        """Persist validation results as a JSON artifact."""
-        artifacts_dir = Path(context.artifacts_dir or ".publisher_artifacts")
-        artifacts_dir.mkdir(parents=True, exist_ok=True)
-
-        artifact_path = artifacts_dir / "05_validation.json"
-        artifact = {
-            "passed": context.validation.passed,
-            "skill_root": str(skill_root),
-            "skill_file": str(skill_file),
-            "checks_run": context.validation.checks_run,
-            "frontmatter_keys": sorted(frontmatter.keys()),
-            "errors": context.validation.errors,
-            "warnings": context.validation.warnings,
-            "notes": context.validation.notes,
-        }
-        artifact_path.write_text(
-            json.dumps(artifact, indent=2, ensure_ascii=True) + "\n",
-            encoding="utf-8",
-        )
-        context.validation.artifact_path = str(artifact_path)
-        return str(artifact_path)

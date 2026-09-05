@@ -11,7 +11,7 @@ from publisher.gates.performance_exam import PerformanceExamGate
 from publisher.gates.security import SecurityGate
 from publisher.gates.validation import ValidationGate
 from publisher.domain.models import PublishContext, SkillSource
-from publisher.stages.compression import CompressionStage
+from publisher.artifacts.report import report_path, write_report
 from publisher.stages.delivery import DeliveryStage
 from publisher.stages.discovery import DiscoveryStage
 from publisher.stages.identity import IdentityStage
@@ -37,7 +37,6 @@ class PublisherPipeline:
             PerformanceExamStage(),
             RankingStage(),
             DeliveryStage(),
-            CompressionStage(),
         )
         self._gates = {
             "discovery": DiscoveryGate(),
@@ -64,7 +63,6 @@ class PublisherPipeline:
     ) -> PublishContext:
         """Create the shared context for one publish flow."""
         source_path = Path(file_path)
-        artifact_root = source_path if source_path.is_dir() else source_path.parent
         return PublishContext(
             source=SkillSource(
                 file_path=file_path,
@@ -79,18 +77,25 @@ class PublisherPipeline:
                 policy_pack_slug=policy_pack_slug,
                 publisher_identity=publisher_identity,
             ),
-            artifacts_dir=str(artifact_root / ".publisher_artifacts"),
+            report_path=str(report_path(source_path)),
         )
 
     def run(self, context: PublishContext) -> PublishContext:
         """Run the full publisher pipeline with the current placeholder stages."""
-        for stage in self._stages:
-            stage.run(context)
-            gate = self._gates.get(stage.name)
-            if (
-                gate
-                and not gate.verify(context)
-                and stage.name not in self._NON_TERMINAL_FAILED_GATES
-            ):
-                break
+        write_report(context, status="running")
+        try:
+            for stage in self._stages:
+                stage.run(context)
+                write_report(context, status="running")
+                gate = self._gates.get(stage.name)
+                if gate:
+                    passed = gate.verify(context)
+                    write_report(context, status="running")
+                    if not passed and stage.name not in self._NON_TERMINAL_FAILED_GATES:
+                        break
+            status = "ready" if context.ranking.publish_decision in {"allow", "review_required"} else "blocked"
+            write_report(context, status=status)
+        except BaseException as exc:
+            write_report(context, status="failed", error=str(exc))
+            raise
         return context

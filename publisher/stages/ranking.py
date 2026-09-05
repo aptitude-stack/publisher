@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
 
 from publisher.domain.models import PublishContext
 from publisher.stages.base import PublisherStage
@@ -23,7 +21,6 @@ class RankingStage(PublisherStage):
         self._score_instruction_quality(context)
         self._score_anthropic_compliance(context)
         self._finalize_total_score(context)
-        artifact_path = self._write_ranking_artifact(context)
         context.add_snapshot(
             stage_name=self.name,
             status="completed",
@@ -32,7 +29,6 @@ class RankingStage(PublisherStage):
                 "criteria_scores": context.ranking.criteria_scores,
                 "label": context.ranking.label,
                 "publish_decision": context.ranking.publish_decision,
-                "artifact_path": artifact_path,
             },
             messages=[
                 "Ranking stage combined authoritative LLM Guard security, Upskill performance, compliance, metadata, and token efficiency.",
@@ -184,24 +180,3 @@ class RankingStage(PublisherStage):
         context.ranking.explanation.append(
             f"Final weighted score is {total:.2f}, labeled {label}, with publish decision {decision}."
         )
-
-    def _write_ranking_artifact(self, context: PublishContext) -> str:
-        """Persist the phase 3 ranking result as JSON."""
-        artifacts_dir = Path(context.artifacts_dir or ".publisher_artifacts")
-        artifacts_dir.mkdir(parents=True, exist_ok=True)
-
-        artifact_path = artifacts_dir / "03_ranking.json"
-        artifact = {
-            "total_score": context.ranking.total_score,
-            "criteria_scores": context.ranking.criteria_scores,
-            "weights": context.ranking.weights,
-            "label": context.ranking.label,
-            "publish_decision": context.ranking.publish_decision,
-            "explanation": context.ranking.explanation,
-        }
-        artifact_path.write_text(
-            json.dumps(artifact, indent=2, ensure_ascii=True) + "\n",
-            encoding="utf-8",
-        )
-        context.ranking.artifact_path = str(artifact_path)
-        return str(artifact_path)

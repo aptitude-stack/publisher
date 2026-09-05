@@ -15,13 +15,15 @@ class DiscoveryGate(PublisherGate):
     stage_name = "discovery"
 
     def verify(self, context: PublishContext) -> bool:
-        blocking_issues: list[str] = []
+        blocking_issues: list[str] = [
+            issue for snapshot in context.stage_history if snapshot.stage_name == "discovery"
+            for issue in snapshot.data.get("blocking_issues", [])
+        ]
         warnings: list[str] = []
 
         skill_root = context.inventory.skill_root
         skill_markdown_path = context.inventory.skill_markdown_path
         parsed_content = context.source.parsed_content
-        inventory_artifact = context.inventory.artifact_path
 
         if not skill_root:
             blocking_issues.append("Discovery did not resolve a skill root.")
@@ -45,14 +47,7 @@ class DiscoveryGate(PublisherGate):
             elif not body.strip():
                 warnings.append("SKILL.md body is empty; later validation may fail.")
 
-        if not inventory_artifact:
-            blocking_issues.append("Discovery did not write an inventory artifact.")
-        elif not Path(inventory_artifact).is_file():
-            blocking_issues.append(
-                f"Discovery inventory artifact was recorded but not found: {inventory_artifact}"
-            )
-
-        if context.inventory.other_files:
+        if any(name not in {"aptitude.yaml", "agents/openai.yaml"} for name in context.inventory.other_files):
             warnings.append(
                 "Discovery found uncategorized files in the skill package; review whether they need explicit handling."
             )
@@ -60,7 +55,7 @@ class DiscoveryGate(PublisherGate):
         passed = not blocking_issues
         explanation = explain_gate_result(
             passed=passed,
-            passed_message="Discovery passed: the skill root, SKILL.md, parsed content, and inventory artifact are available.",
+            passed_message="Discovery passed: the skill root, SKILL.md, and parsed content are available.",
             blocking_issues=blocking_issues,
             warnings=warnings,
         )
@@ -74,7 +69,6 @@ class DiscoveryGate(PublisherGate):
                 "stage_name": self.stage_name,
                 "skill_root": skill_root,
                 "skill_markdown_path": skill_markdown_path,
-                "inventory_artifact": inventory_artifact,
             },
         )
         context.add_snapshot(

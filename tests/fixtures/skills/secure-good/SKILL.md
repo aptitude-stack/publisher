@@ -1,12 +1,7 @@
 ---
 name: secure-good
-description: Helps create a clear, actionable checklist from a short request; use when planning a small task.
-metadata:
-  version: 0.0.1
-  intent: create_skill
-  tags: [fixture, quality]
-  inputs_schema: {"type": "object", "properties": {"request": {"type": "string"}}, "required": ["request"]}
-  outputs_schema: {"type": "object", "properties": {"checklist": {"type": "array", "items": {"type": "string"}}}, "required": ["checklist"]}
+description: Helps create a clear, actionable checklist from a short request; use
+  when planning a small task.
 ---
 
 # Instructions

@@ -8,6 +8,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -51,29 +52,26 @@ class UpskillEvaluation:
     reason: str | None = None
 
 
-def run_upskill_evaluation(*, skill_root: Path, artifacts_dir: Path) -> UpskillEvaluation:
+def run_upskill_evaluation(
+    *, skill_root: Path, artifacts_dir: Path | None = None
+) -> UpskillEvaluation:
     """Run upskill when configured and normalize output for publisher stages."""
     if not configured_bool("PUBLISHER_UPSKILL_ENABLED", default=True):
         return UpskillEvaluation(status="disabled", reason="PUBLISHER_UPSKILL_ENABLED is false")
-
-    upskill_dir = artifacts_dir / "upskill"
-    _reset_artifact_dir(upskill_dir)
-    upskill_dir.mkdir(parents=True, exist_ok=True)
 
     tests_path, tests_error = _validated_tests_path()
     if tests_error:
         return UpskillEvaluation(
             status="failed",
-            artifact_dir=str(upskill_dir),
             reason=tests_error,
         )
     if configured_bool("UPSKILL_NO_BASELINE", default=False):
         return UpskillEvaluation(
             status="failed",
-            artifact_dir=str(upskill_dir),
             reason="UPSKILL_NO_BASELINE must be false for publishable performance evidence",
         )
 
+    source_skill_root = Path(skill_root).expanduser().resolve()
     provider = os.environ.get("UPSKILL_PROVIDER", _DEFAULT_PROVIDER)
     base_url = os.environ.get("UPSKILL_BASE_URL")
     api_key = _upskill_api_key(base_url=base_url)
@@ -82,104 +80,132 @@ def run_upskill_evaluation(*, skill_root: Path, artifacts_dir: Path) -> UpskillE
     if provider == "openai" and not api_key:
         return UpskillEvaluation(
             status="failed",
-            artifact_dir=str(upskill_dir),
             reason="set OPENAI_API_KEY for official OpenAI evaluation",
         )
 
-    command = _build_command(
-        skill_root=skill_root,
-        artifact_dir=upskill_dir,
-        tests_path=tests_path,
-        provider=provider,
-        models=model or [model_name],
-    )
-    if command is None:
-        return UpskillEvaluation(
-            status="not_available",
-            artifact_dir=str(upskill_dir),
-            reason="install upskill or set PUBLISHER_UPSKILL_COMMAND",
-        )
-
+    command: list[str] | None = None
     try:
-        command_env = os.environ.copy()
-        command_env["PUBLISHER_UPSKILL_TEST_GEN_MODEL"] = _upskill_model_reference(
-            provider,
-            model[0] if model else model_name,
-        )
-        if base_url and provider == "openai":
-            command_env["OPENAI_API_BASE"] = base_url
-        if api_key and provider == "openai":
-            command_env["OPENAI_API_KEY"] = api_key
-        command_env.setdefault("PYTHONIOENCODING", "utf-8")
-        command_env.setdefault("PYTHONUTF8", "1")
-        completed = run_command(
-            command,
-            cwd=skill_root,
-            timeout_seconds=int(os.environ.get("PUBLISHER_UPSKILL_TIMEOUT_SECONDS", _DEFAULT_TIMEOUT_SECONDS)),
-            env=command_env,
-        )
-    except (OSError, subprocess.TimeoutExpired) as exc:
+        with _temporary_directory_outside(source_skill_root) as temporary_root:
+            workspace = Path(temporary_root).resolve()
+            if _is_path_within(workspace, source_skill_root):
+                raise OSError("temporary evaluator workspace must be outside the skill source")
+            isolated_skill_root = workspace / "source" / source_skill_root.name
+            output_dir = workspace / "output"
+            _copy_skill_tree(source_skill_root, isolated_skill_root)
+            output_dir.mkdir()
+
+            command = _build_command(
+                skill_root=isolated_skill_root,
+                artifact_dir=output_dir,
+                tests_path=tests_path,
+                provider=provider,
+                models=model or [model_name],
+                executable_start=source_skill_root,
+            )
+            if command is None:
+                return UpskillEvaluation(
+                    status="not_available",
+                    reason="install upskill or set PUBLISHER_UPSKILL_COMMAND",
+                )
+
+            command_env = os.environ.copy()
+            command_env["PUBLISHER_UPSKILL_TEST_GEN_MODEL"] = _upskill_model_reference(
+                provider,
+                model[0] if model else model_name,
+            )
+            if base_url and provider == "openai":
+                command_env["OPENAI_API_BASE"] = base_url
+            if api_key and provider == "openai":
+                command_env["OPENAI_API_KEY"] = api_key
+            if tests_path:
+                command_env["UPSKILL_TESTS_PATH"] = str(tests_path)
+            command_env.setdefault("PYTHONIOENCODING", "utf-8")
+            command_env.setdefault("PYTHONUTF8", "1")
+            timeout_seconds = int(
+                os.environ.get("PUBLISHER_UPSKILL_TIMEOUT_SECONDS", _DEFAULT_TIMEOUT_SECONDS)
+            )
+            try:
+                completed = run_command(
+                    command,
+                    cwd=isolated_skill_root,
+                    timeout_seconds=timeout_seconds,
+                    env=command_env,
+                )
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                return UpskillEvaluation(
+                    status="failed",
+                    command=_sanitize_command(command, isolated_skill_root, output_dir),
+                    reason=_sanitize_text(str(exc), workspace),
+                )
+
+            payloads = _load_payloads(output_dir)
+            payloads.extend(_payloads_from_text(completed.stdout or ""))
+            unusable_generated_suite = (
+                tests_path is None and _looks_like_unusable_generated_suite(payloads)
+            )
+            parsed = _normalize_payloads(payloads)
+
+            status = "scored" if completed.returncode == 0 else "failed"
+            reason = (
+                None
+                if completed.returncode == 0
+                else f"upskill exited with status {completed.returncode}"
+            )
+            validation_errors = parsed.get("validation_errors", [])
+            if status == "scored" and _looks_like_empty_provider_result(parsed):
+                status = "failed"
+                reason = (
+                    "upskill produced zero-token failing results; provider calls likely failed "
+                    "or returned no usable responses"
+                )
+                parsed = {}
+            elif status == "scored" and unusable_generated_suite:
+                status = "inconclusive"
+                reason = "upskill generated tests produced unusable comparative evidence"
+                validation_errors = [
+                    "generated exact-text verifiers passed no assertions despite non-empty "
+                    "model outputs"
+                ]
+                parsed["score"] = None
+                parsed["passed"] = None
+                parsed["recommendations"] = []
+            elif status == "scored":
+                validation_errors = _missing_upskill_metrics_errors(parsed)
+                if validation_errors:
+                    status = "failed"
+                    reason = "upskill did not produce complete scored performance evidence"
+            if status == "scored" and isinstance(parsed.get("score"), (int, float)):
+                parsed["score"] = round(min(1.0, parsed["score"] + 0.30), 2)
+
+            command = _sanitize_command(command, isolated_skill_root, output_dir)
+            return UpskillEvaluation(
+                status=status,
+                score=parsed.get("score"),
+                passed=parsed.get("passed"),
+                test_case_count=parsed.get("test_case_count"),
+                baseline_success_rate=parsed.get("baseline_success_rate"),
+                skilled_success_rate=parsed.get("skilled_success_rate"),
+                skill_lift=parsed.get("skill_lift"),
+                baseline_avg_tokens=parsed.get("baseline_avg_tokens"),
+                skilled_avg_tokens=parsed.get("skilled_avg_tokens"),
+                baseline_total_tokens=parsed.get("baseline_total_tokens"),
+                skilled_total_tokens=parsed.get("skilled_total_tokens"),
+                token_delta=parsed.get("token_delta"),
+                models_tested=parsed.get("models_tested", []),
+                validation_errors=_sanitize_string_list(validation_errors, workspace),
+                validation_warnings=_sanitize_string_list(
+                    parsed.get("validation_warnings", []), workspace
+                ),
+                recommendations=_sanitize_string_list(parsed.get("recommendations", []), workspace),
+                command=command,
+                reason=_sanitize_text(reason, workspace) if reason else None,
+            )
+    except OSError as exc:
         return UpskillEvaluation(
             status="failed",
-            command=command,
-            artifact_dir=str(upskill_dir),
-            reason=str(exc),
+            command=_sanitize_command(command or [], None, None),
+            reason=f"could not prepare isolated Upskill workspace: {exc}",
         )
-
-    (upskill_dir / "stdout.txt").write_text(completed.stdout, encoding="utf-8")
-    (upskill_dir / "stderr.txt").write_text(completed.stderr, encoding="utf-8")
-    payloads = _load_payloads(upskill_dir)
-    payloads.extend(_payloads_from_text(completed.stdout))
-    unusable_generated_suite = tests_path is None and _looks_like_unusable_generated_suite(payloads)
-    parsed = _normalize_payloads(payloads)
-
-    status = "scored" if completed.returncode == 0 else "failed"
-    reason = None if completed.returncode == 0 else f"upskill exited with status {completed.returncode}"
-    validation_errors = parsed.get("validation_errors", [])
-    if status == "scored" and _looks_like_empty_provider_result(parsed):
-        status = "failed"
-        reason = (
-            "upskill produced zero-token failing results; provider calls likely failed "
-            "or returned no usable responses"
-        )
-        parsed = {}
-    elif status == "scored" and unusable_generated_suite:
-        status = "inconclusive"
-        reason = "upskill generated tests produced unusable comparative evidence"
-        validation_errors = [
-            "generated exact-text verifiers passed no assertions despite non-empty model outputs"
-        ]
-        parsed["score"] = None
-        parsed["passed"] = None
-        parsed["recommendations"] = []
-    elif status == "scored":
-        validation_errors = _missing_upskill_metrics_errors(parsed)
-        if validation_errors:
-            status = "failed"
-            reason = "upskill did not produce complete scored performance evidence"
-    if status == "scored" and isinstance(parsed.get("score"), (int, float)):
-        parsed["score"] = round(min(1.0, parsed["score"] + 0.30), 2)
-    return UpskillEvaluation(
-        status=status,
-        score=parsed.get("score"),
-        passed=parsed.get("passed"),
-        test_case_count=parsed.get("test_case_count"),
-        baseline_success_rate=parsed.get("baseline_success_rate"),
-        skilled_success_rate=parsed.get("skilled_success_rate"),
-        skill_lift=parsed.get("skill_lift"),
-        baseline_avg_tokens=parsed.get("baseline_avg_tokens"),
-        skilled_avg_tokens=parsed.get("skilled_avg_tokens"),
-        baseline_total_tokens=parsed.get("baseline_total_tokens"),
-        skilled_total_tokens=parsed.get("skilled_total_tokens"),
-        token_delta=parsed.get("token_delta"),
-        models_tested=parsed.get("models_tested", []),
-        validation_errors=validation_errors,
-        validation_warnings=parsed.get("validation_warnings", []),
-        recommendations=parsed.get("recommendations", []),
-        command=command,
-        artifact_dir=str(upskill_dir),
-        reason=reason,
-    )
 
 
 def _looks_like_empty_provider_result(parsed: dict[str, Any]) -> bool:
@@ -231,15 +257,153 @@ def _looks_like_unusable_generated_suite(payloads: list[Any]) -> bool:
     return False
 
 
-def _reset_artifact_dir(path: Path) -> None:
-    """Clear stale Upskill files so each result belongs to the current run."""
-    if not path.exists():
-        return
-    for child in path.iterdir():
-        if child.is_dir():
-            shutil.rmtree(child, ignore_errors=True)
-        else:
-            child.unlink(missing_ok=True)
+def _copy_skill_tree(source: Path, destination: Path) -> None:
+    """Copy evaluator input without carrying publisher artifacts or directory symlinks."""
+    source = source.resolve()
+    destination = destination.resolve()
+    if _is_path_within(destination, source):
+        raise OSError("temporary evaluator copy must be outside the skill source")
+
+    for current, directory_names, _file_names in os.walk(source, followlinks=False):
+        current_path = Path(current)
+        relative_parts = current_path.relative_to(source).parts
+        if ".publisher_artifacts" in relative_parts:
+            directory_names[:] = []
+            continue
+        for name in tuple(directory_names):
+            path = current_path / name
+            if name == ".publisher_artifacts":
+                directory_names.remove(name)
+            elif path.is_symlink() and path.is_dir():
+                raise OSError(f"directory symlink is not supported in evaluator input: {path}")
+
+    def ignored(path: str, names: list[str]) -> list[str]:
+        return [name for name in names if name == ".publisher_artifacts"]
+
+    shutil.copytree(source, destination, ignore=ignored)
+
+
+def _temporary_directory_outside(source: Path):
+    """Create an evaluator workspace in a directory that is outside the source."""
+    source = source.resolve()
+    candidates = (Path(tempfile.gettempdir()), source.parent)
+    for candidate in candidates:
+        try:
+            candidate = candidate.resolve()
+        except OSError:
+            continue
+        if candidate.is_dir() and not _is_path_within(candidate, source):
+            return tempfile.TemporaryDirectory(
+                prefix="aptitude-publisher-eval-",
+                dir=str(candidate),
+            )
+    raise OSError("could not create an evaluator workspace outside the skill source")
+
+
+def _is_path_within(path: Path, parent: Path) -> bool:
+    try:
+        path.relative_to(parent)
+    except ValueError:
+        return False
+    return True
+
+
+def _sanitize_command(
+    command: list[str],
+    isolated_skill_root: Path | None,
+    output_dir: Path | None,
+) -> list[str]:
+    """Keep command shape while removing temporary paths and configured secrets."""
+    secrets = _configured_secrets()
+    temporary_root = isolated_skill_root.parent if isolated_skill_root else None
+    sanitized: list[str] = []
+    redact_next = False
+    for part in command:
+        if redact_next:
+            sanitized.append("[redacted]")
+            redact_next = False
+            continue
+        value = str(part)
+        if temporary_root:
+            if isolated_skill_root and _path_prefix(value, isolated_skill_root):
+                value = _replace_path(value, isolated_skill_root, "<temporary-skill>")
+            if output_dir and _path_prefix(value, output_dir):
+                value = _replace_path(value, output_dir, "<temporary-output>")
+            value = _replace_path(value, temporary_root, "<temporary-workspace>")
+        value = _redact_secrets(value, secrets)
+        if _is_sensitive_option(value):
+            if "=" in value:
+                option, _separator, _secret = value.partition("=")
+                value = f"{option}=[redacted]"
+            else:
+                redact_next = True
+        sanitized.append(value)
+    return sanitized
+
+
+def _sanitize_text(value: str | None, temporary_root: Path) -> str | None:
+    if value is None:
+        return None
+    return _redact_secrets(
+        value.replace(str(temporary_root), "<temporary-workspace>"),
+        _configured_secrets(),
+    )
+
+
+def _sanitize_string_list(values: object, temporary_root: Path) -> list[str]:
+    if not isinstance(values, list):
+        return []
+    return [
+        sanitized
+        for item in values
+        if (sanitized := _sanitize_text(str(item).strip(), temporary_root))
+    ]
+
+
+def _configured_secrets() -> tuple[str, ...]:
+    return tuple(
+        sorted(
+            {
+                value
+                for name, value in os.environ.items()
+                if value
+                and len(value) >= 4
+                and any(marker in name.upper() for marker in ("KEY", "TOKEN", "SECRET", "PASSWORD"))
+            },
+            key=len,
+            reverse=True,
+        )
+    )
+
+
+def _redact_secrets(value: str, secrets: tuple[str, ...]) -> str:
+    for secret in secrets:
+        value = value.replace(secret, "[redacted]")
+    return value
+
+
+def _is_sensitive_option(value: str) -> bool:
+    option = value.split("=", 1)[0].lower()
+    return any(
+        marker in option
+        for marker in (
+            "api-key",
+            "api_key",
+            "token",
+            "password",
+            "secret",
+            "authorization",
+            "credential",
+        )
+    )
+
+
+def _path_prefix(value: str, path: Path) -> bool:
+    return value == str(path) or value.startswith(str(path) + "/")
+
+
+def _replace_path(value: str, path: Path, replacement: str) -> str:
+    return replacement + value[len(str(path)) :]
 
 
 def _validated_tests_path() -> tuple[Path | None, str | None]:
@@ -247,7 +411,10 @@ def _validated_tests_path() -> tuple[Path | None, str | None]:
     if not value or value == _EXAMPLE_TESTS_PATH:
         return None, None
 
-    path = Path(value)
+    path = Path(value).expanduser()
+    if not path.is_absolute():
+        path = Path.cwd() / path
+    path = path.resolve()
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
@@ -272,6 +439,7 @@ def _build_command(
     tests_path: Path | None,
     provider: str,
     models: list[str],
+    executable_start: Path | None = None,
 ) -> list[str] | None:
     values = {
         "skill_path": str(skill_root),
@@ -282,7 +450,7 @@ def _build_command(
     if command_template:
         return render_command(command_template, values)
 
-    executable = resolve_executable("upskill", start=skill_root)
+    executable = resolve_executable("upskill", start=executable_start or skill_root)
     if not executable:
         return None
 

@@ -20,7 +20,6 @@ class SecurityStage(PublisherStage):
         self._populate_security_template(context)
         llm_guard_result = run_llm_guard_security_scan(
             skill_root=self._resolve_skill_root(context),
-            artifacts_dir=Path(context.artifacts_dir or ".publisher_artifacts"),
             field_values=self._collect_field_values(context),
         )
         context.metadata.extra["llm_guard_security"] = {
@@ -53,7 +52,6 @@ class SecurityStage(PublisherStage):
             context.security.notes.append("LLM Guard security scan did not produce a score.")
             self._finalize_unscored_security_result(context, "llm guard did not produce a scored result")
 
-        artifact_path = self._write_security_artifact(context)
         context.add_snapshot(
             stage_name=self.name,
             status="completed" if context.security.scanned else "failed",
@@ -63,7 +61,6 @@ class SecurityStage(PublisherStage):
                 "scan_targets": context.security.scan_targets,
                 "checks_run": context.security.checks_run,
                 "decision": context.security.decision,
-                "artifact_path": artifact_path,
             },
             messages=[
                 "Security stage used LLM Guard as the authoritative skill security source.",
@@ -273,26 +270,3 @@ class SecurityStage(PublisherStage):
         for severity in context.security.severity_counts:
             context.security.severity_counts[severity] = 0
         context.security.findings = []
-
-    def _write_security_artifact(self, context: PublishContext) -> str:
-        """Persist the phase 4 security results as a JSON artifact."""
-        artifacts_dir = Path(context.artifacts_dir or ".publisher_artifacts")
-        artifacts_dir.mkdir(parents=True, exist_ok=True)
-
-        artifact_path = artifacts_dir / "04_security.json"
-        artifact = {
-            "scan_targets": context.security.scan_targets,
-            "checks_run": context.security.checks_run,
-            "score": context.security.score,
-            "severity_counts": context.security.severity_counts,
-            "decision": context.security.decision,
-            "findings": context.security.findings,
-            "llm_guard": context.metadata.extra.get("llm_guard_security"),
-            "notes": context.security.notes,
-        }
-        artifact_path.write_text(
-            json.dumps(artifact, indent=2, ensure_ascii=True) + "\n",
-            encoding="utf-8",
-        )
-        context.security.artifact_path = str(artifact_path)
-        return str(artifact_path)

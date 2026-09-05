@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from publisher.domain.models import PublishContext
-from publisher.relationships import normalize_relationships, relationship_frontmatter_value
+from publisher.relationships import normalize_relationships, relationship_manifest_value
 from publisher.stages.base import PublisherStage
 
 
@@ -72,7 +72,7 @@ class DeliveryStage(PublisherStage):
             "policy_pack_slug": context.source.policy_pack_slug,
             "provenance": provenance,
         }
-        frontmatter = context.source.parsed_content.get("frontmatter", {})
+        manifest = context.source.parsed_content.get("manifest", {})
         context.delivery_payload.relationships = normalize_relationships(
-            relationship_frontmatter_value(frontmatter)
+            relationship_manifest_value(manifest)
         )

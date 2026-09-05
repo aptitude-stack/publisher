@@ -94,10 +94,11 @@ not display the guided terminal wizard.
 }
 ```
 
-`aptitude_publisher_inspect_skill` runs the local evaluation pipeline and writes
-`.publisher_artifacts/` trace files. `aptitude_publisher_publish_skill` reruns
+`aptitude_publisher_inspect_skill` runs the local evaluation pipeline and
+returns the latest JSON report path. `aptitude_publisher_publish_skill` reruns
 that evaluation and can mutate registry state, so it requires an explicit slug,
-publish intent, and `confirm_upload=true`. Credentials are read only from the
+publish intent, and `confirm_upload=true`. Its evaluation response uses
+`report_path`; `artifacts_dir` is obsolete. Credentials are read only from the
 server environment and are never accepted as tool inputs. Admin batch upload
 and remote HTTP transport are outside the MCP v1 surface.
 
@@ -157,9 +158,48 @@ aptitude-publisher publish /path/to/skill \
 
 ## Skill Folder Contract
 
-A publish-ready source is a local skill folder with a required `SKILL.md` file. The publisher reads the `SKILL.md` frontmatter for registry identity, version, metadata, schemas, and relationships.
+A publish-ready source is a local skill folder with required `SKILL.md` and
+`aptitude.yaml` files. `SKILL.md` keeps the standard `name`, `description`,
+`license`, and `compatibility` fields. Aptitude publishing metadata is a flat
+sidecar:
 
-Generated files under `.publisher_artifacts/` are local trace artifacts. They are not source files to author, and they are excluded from the immutable upload bundle.
+```yaml
+version: "0.1.0"
+intent: create_skill
+tags: [python, review]
+inputs_schema: {}
+outputs_schema: {}
+relationships:
+  depends_on:
+    - slug: python-testing
+      version: "0.1.2"
+token_estimate: 1200
+maturity_score: 0.8
+security_score: 0.9
+```
+
+`relationships` and numeric hints are optional; omitted relationship families
+default to empty lists. CLI and MCP values override sidecar identity values.
+`agents/openai.yaml`, when present, remains independent and unchanged. The
+publisher rejects duplicate YAML keys, unknown fields, invalid types, malformed
+relationship selectors, and known Aptitude fields left in legacy frontmatter.
+Move legacy fields manually to `aptitude.yaml` instead of relying on fallback
+parsing.
+
+The publisher retains one latest JSON report per canonical skill directory. Its
+path is `<cache-root>/aptitude/publisher/<sha256(canonical-absolute-skill-directory)>.json`,
+where `<cache-root>` is the absolute `XDG_CACHE_HOME` when configured or
+`~/.cache` otherwise. The report has `schema_version`, `skill_root`,
+`updated_at`, `status`, `stages`, `gates`, `evidence`, `warnings`, `error`, and
+`inspection_receipt`; status is `running`, `ready`, `blocked`, or `failed`.
+Writes are atomic and owner-only. Raw evaluator transcripts, credentials,
+environment dumps, and temporary paths are not retained. Evaluator copies and
+working directories are temporary, outside the source tree, and cleaned after
+success, failure, or timeout.
+
+Existing `.publisher_artifacts/` directories are preserved historical content,
+excluded from inventory and the immutable upload bundle, and never read or
+written by the current publisher.
 
 ---
 
@@ -167,7 +207,8 @@ Generated files under `.publisher_artifacts/` are local trace artifacts. They ar
 
 - guided inspect, publish, and admin batch-upload wizard
 - skill-root discovery from local folders or explicit paths
-- registry identity derivation from `SKILL.md` frontmatter
+- registry identity derivation from `SKILL.md` `name` and `aptitude.yaml`
+  `version`/`intent`
 - create-skill and publish-version intent handling
 - relationship normalization and registry existence alerts
 - metadata extraction for public skill facts and generated estimates
