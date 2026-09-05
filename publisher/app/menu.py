@@ -38,6 +38,7 @@ from publisher.app.cli import (
 from publisher.app.pipeline import PublisherPipeline
 from publisher.domain.models import PublishContext
 from publisher.frontmatter import parse_skill_markdown
+from publisher.manifest import load_manifest
 from publisher.registry.client import (
     check_relationship_references,
     publish_to_registry,
@@ -397,15 +398,18 @@ def _read_menu_skill(skill_file: Path) -> MenuSkill | None:
         return None
 
     frontmatter = _read_frontmatter(skill_file)
-    metadata = frontmatter.get("metadata", {})
-    if not isinstance(metadata, dict):
-        metadata = {}
+    try:
+        metadata = load_manifest(skill_file.parent)
+    except ValueError:
+        return None
+    if not metadata.get("version") or not metadata.get("intent"):
+        return None
     license_value = frontmatter.get("license")
     return MenuSkill(
         path=skill_file.parent,
         name=str(frontmatter.get("name") or skill_file.parent.name),
-        version=str(metadata.get("version") or "1.0.0"),
-        intent=str(metadata.get("intent") or "create_skill"),
+        version=str(metadata["version"]),
+        intent=str(metadata["intent"]),
         license=license_value.strip()
         if isinstance(license_value, str) and license_value.strip()
         else None,
@@ -488,7 +492,7 @@ def _run_batch_upload_wizard() -> int:
     if not skills:
         CONSOLE.print(
             _frame(
-                f"No skill folders with SKILL.md were found under {skills_directory}.",
+                f"No skill folders with SKILL.md and valid aptitude.yaml metadata were found under {skills_directory}.",
                 title="Admin Batch Upload",
                 border_style="yellow",
             )

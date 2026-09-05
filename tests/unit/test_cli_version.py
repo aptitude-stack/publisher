@@ -478,9 +478,6 @@ def _write_skill(tmp_path: Path, *, name: str, intent: str) -> Path:
         f"""---
 name: {name}
 description: "Use when testing publisher preflight behavior."
-metadata:
-  version: 0.1.0
-  intent: {intent}
 ---
 
 # {name}
@@ -489,4 +486,7 @@ Use this skill for publisher unit tests.
 """,
         encoding="utf-8",
     )
+    (skill_dir / "SKILL.md").with_name("aptitude.yaml").write_text(f"""version: 0.1.0
+intent: {intent}
+""", encoding="utf-8")
     return skill_dir

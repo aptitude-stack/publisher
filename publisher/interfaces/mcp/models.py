@@ -98,7 +98,7 @@ class EvaluationSummary(BaseModel):
     security_score: float | None
     overall_score: float | None
     overall_label: str | None
-    artifacts_dir: str | None
+    report_path: str | None
 
 
 class RegistrySummary(BaseModel):

@@ -18,7 +18,6 @@ class IdentityStage(PublisherStage):
         self._populate_identity_from_skill(context, parsed_skill)
         missing_fields = self._collect_missing_fields(context)
         self._record_identity_notes(context, missing_fields)
-        artifact_path = self._write_identity_artifact(context)
         context.add_snapshot(
             stage_name=self.name,
             status="completed" if not missing_fields else "incomplete",
@@ -26,14 +25,13 @@ class IdentityStage(PublisherStage):
                 "slug": context.identity.slug,
                 "version": context.identity.version,
                 "intent": context.identity.intent,
-                "artifact_path": artifact_path,
                 "skill_root": context.inventory.skill_root,
                 "skill_markdown_path": context.inventory.skill_markdown_path,
                 "missing_fields": missing_fields,
             },
             messages=[
-                "Identity artifact created successfully.",
-                "Identity values were extracted from parsed SKILL.md data.",
+                "Identity values resolved successfully.",
+                "Slug was extracted from SKILL.md; version and intent were extracted from aptitude.yaml.",
             ],
         )
 
@@ -42,17 +40,19 @@ class IdentityStage(PublisherStage):
         context: PublishContext,
         parsed_skill: dict[str, Any],
     ) -> None:
-        """Extract slug, version, and intent from the parsed skill file."""
+        """Extract slug from SKILL.md and version/intent from aptitude.yaml."""
         frontmatter = parsed_skill.get("frontmatter", {})
-        metadata = frontmatter.get("metadata", {}) if isinstance(frontmatter, dict) else {}
+        manifest = parsed_skill.get("manifest", {})
+        if not isinstance(manifest, dict):
+            manifest = {}
         context.identity.slug = (
             context.source.slug_override or self._extract_string(frontmatter, "name")
         )
         context.identity.version = (
-            context.source.version_override or self._extract_string(metadata, "version")
+            context.source.version_override or self._extract_string(manifest, "version")
         )
         context.identity.intent = (
-            context.source.intent_override or self._extract_string(metadata, "intent")
+            context.source.intent_override or self._extract_string(manifest, "intent")
         )
 
     def _collect_missing_fields(self, context: PublishContext) -> list[str]:
@@ -72,7 +72,9 @@ class IdentityStage(PublisherStage):
         missing_fields: list[str],
     ) -> None:
         """Document how the identity stage behaves."""
-        context.identity.notes.append("Identity values are extracted from the skill file.")
+        context.identity.notes.append(
+            "Slug is extracted from SKILL.md; version and intent are extracted from aptitude.yaml."
+        )
         if missing_fields:
             context.identity.notes.append(
                 "Missing required identity fields: " + ", ".join(missing_fields)
@@ -80,31 +82,6 @@ class IdentityStage(PublisherStage):
         else:
             context.identity.notes.append("All required identity fields were provided.")
 
-    def _write_identity_artifact(self, context: PublishContext) -> str:
-        """Persist the stage 1 result as a JSON artifact for later stages."""
-        import json
-        from pathlib import Path
-
-        artifacts_dir = Path(context.artifacts_dir or ".publisher_artifacts")
-        artifacts_dir.mkdir(parents=True, exist_ok=True)
-
-        artifact_path = artifacts_dir / "01_identity.json"
-        artifact = {
-            "slug": context.identity.slug,
-            "version": context.identity.version,
-            "intent": context.identity.intent,
-            "source_file": context.inventory.skill_markdown_path,
-            "skill_root": context.inventory.skill_root,
-            "inventory_artifact": context.inventory.artifact_path,
-            "parsed_keys": sorted(context.source.parsed_content.keys()),
-            "notes": context.identity.notes,
-        }
-        artifact_path.write_text(
-            json.dumps(artifact, indent=2, ensure_ascii=True) + "\n",
-            encoding="utf-8",
-        )
-        context.identity.artifact_path = str(artifact_path)
-        return str(artifact_path)
 
     def _extract_string(self, payload: dict[str, object], key: str) -> str | None:
         """Return a stripped string value if it exists."""

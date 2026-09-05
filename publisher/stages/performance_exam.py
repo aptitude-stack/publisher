@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 from publisher.domain.models import PublishContext
@@ -19,7 +18,6 @@ class PerformanceExamStage(PublisherStage):
         self._reset_exam_state(context)
         self._run_upskill_exam(context)
         self._apply_maturity_score(context)
-        artifact_path = self._write_exam_artifact(context)
         context.add_snapshot(
             stage_name=self.name,
             status="completed" if context.performance_exam.score is not None else "failed",
@@ -34,7 +32,6 @@ class PerformanceExamStage(PublisherStage):
                 "skill_lift": context.performance_exam.skill_lift,
                 "token_delta": context.performance_exam.token_delta,
                 "efficiency_label": context.performance_exam.efficiency_label,
-                "artifact_path": artifact_path,
             },
             messages=[
                 "Performance exam consumed Upskill as the sole performance source.",
@@ -65,7 +62,6 @@ class PerformanceExamStage(PublisherStage):
         """Run Upskill and copy measured metrics into the performance exam."""
         result = run_upskill_evaluation(
             skill_root=self._resolve_skill_root(context),
-            artifacts_dir=Path(context.artifacts_dir or ".publisher_artifacts"),
         )
         context.metadata.extra["upskill_evaluation"] = {
             "status": result.status,
@@ -167,35 +163,3 @@ class PerformanceExamStage(PublisherStage):
         if source_path.name == "SKILL.md":
             return source_path.parent
         return source_path.parent
-
-    def _write_exam_artifact(self, context: PublishContext) -> str:
-        artifacts_dir = Path(context.artifacts_dir or ".publisher_artifacts")
-        artifacts_dir.mkdir(parents=True, exist_ok=True)
-
-        artifact_path = artifacts_dir / "05_performance_exam.json"
-        exam = context.performance_exam
-        artifact = {
-            "score": exam.score,
-            "passed": exam.passed,
-            "test_case_count": exam.test_case_count,
-            "models_tested": exam.models_tested,
-            "baseline_success_rate": exam.baseline_success_rate,
-            "skilled_success_rate": exam.skilled_success_rate,
-            "skill_lift": exam.skill_lift,
-            "baseline_avg_tokens": exam.baseline_avg_tokens,
-            "skilled_avg_tokens": exam.skilled_avg_tokens,
-            "token_delta": exam.token_delta,
-            "efficiency_label": exam.efficiency_label,
-            "metadata_token_estimate": context.metadata.token_estimate,
-            "metadata_token_estimate_source": context.metadata.extra.get("token_estimate_source"),
-            "metadata_maturity_score": context.metadata.maturity_score,
-            "metadata_maturity_score_source": context.metadata.extra.get("maturity_score_source"),
-            "upskill": context.metadata.extra.get("upskill_evaluation"),
-            "notes": exam.notes,
-        }
-        artifact_path.write_text(
-            json.dumps(artifact, indent=2, ensure_ascii=True) + "\n",
-            encoding="utf-8",
-        )
-        exam.artifact_path = str(artifact_path)
-        return str(artifact_path)

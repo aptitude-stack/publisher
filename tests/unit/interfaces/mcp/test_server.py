@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from publisher.artifacts.report import report_path
+
 import asyncio
 import json
 from pathlib import Path
@@ -24,7 +26,7 @@ def _context(skill_root: Path, *, decision: str = "allow") -> PublishContext:
             slug_override="example-skill",
             intent_override="create_skill",
         ),
-        artifacts_dir=str(skill_root / ".publisher_artifacts"),
+        report_path=str(report_path(skill_root)),
     )
     context.inventory.skill_root = str(skill_root)
     context.identity.slug = "example-skill"
@@ -65,9 +67,10 @@ def _skill(tmp_path: Path) -> Path:
     skill_root = tmp_path / "example-skill"
     skill_root.mkdir()
     (skill_root / "SKILL.md").write_text(
-        "---\nname: example-skill\nmetadata:\n  version: 1.0.0\n---\n",
+        "---\nname: example-skill\n---\n",
         encoding="utf-8",
     )
+    (skill_root / "aptitude.yaml").write_text("version: 1.0.0\nintent: create_skill\ntags: [test]\ninputs_schema: {}\noutputs_schema: {}\n")
     return skill_root
 
 

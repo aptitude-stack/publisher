@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import re
 from pathlib import Path
 from typing import Any
@@ -20,7 +19,6 @@ class MetadataStage(PublisherStage):
     def run(self, context: PublishContext) -> None:
         metadata_payload = self._load_metadata_payload(context)
         self._populate_metadata(context, metadata_payload)
-        artifact_path = self._write_metadata_artifact(context)
         context.add_snapshot(
             stage_name=self.name,
             status="completed",
@@ -29,33 +27,32 @@ class MetadataStage(PublisherStage):
                 "description": context.metadata.description,
                 "tags": context.metadata.tags,
                 "word_count": context.metadata.word_count,
-                "artifact_path": artifact_path,
             },
             messages=[
-                "Metadata values were extracted from the skill file.",
+                "Name and description were extracted from SKILL.md; Aptitude metadata was extracted from aptitude.yaml.",
                 "Word count was calculated from the skill content.",
             ],
         )
 
     def _load_metadata_payload(self, context: PublishContext) -> dict[str, Any]:
-        """Build the publish metadata view from SKILL.md frontmatter."""
+        """Build the publish metadata view from SKILL.md and aptitude.yaml."""
         frontmatter = context.source.parsed_content.get("frontmatter", {})
         if not isinstance(frontmatter, dict):
             return {}
 
-        extra_metadata = frontmatter.get("metadata", {})
-        if not isinstance(extra_metadata, dict):
-            extra_metadata = {}
+        manifest = context.source.parsed_content.get("manifest", {})
+        if not isinstance(manifest, dict):
+            manifest = {}
 
         payload: dict[str, Any] = {
             "name": frontmatter.get("name"),
             "description": frontmatter.get("description"),
-            "tags": extra_metadata.get("tags", []),
-            "inputs_schema": extra_metadata.get("inputs_schema"),
-            "outputs_schema": extra_metadata.get("outputs_schema"),
-            "token_estimate": extra_metadata.get("token_estimate"),
-            "maturity_score": extra_metadata.get("maturity_score"),
-            "security_score": extra_metadata.get("security_score"),
+            "tags": manifest.get("tags", []),
+            "inputs_schema": manifest.get("inputs_schema"),
+            "outputs_schema": manifest.get("outputs_schema"),
+            "token_estimate": manifest.get("token_estimate"),
+            "maturity_score": manifest.get("maturity_score"),
+            "security_score": manifest.get("security_score"),
             "compatibility": frontmatter.get("compatibility"),
             "license": frontmatter.get("license"),
         }
@@ -79,7 +76,7 @@ class MetadataStage(PublisherStage):
         context.metadata.word_count = self._count_words(context)
 
         context.metadata.notes = [
-            "Metadata values are extracted from SKILL.md inside the skill folder.",
+            "Name and description are extracted from SKILL.md; Aptitude metadata is extracted from aptitude.yaml.",
             "Token estimate starts as a publisher content heuristic and is replaced by Upskill measured tokens when available.",
             "Word count is a publisher-side field and is not part of the server contract.",
         ]
@@ -125,32 +122,6 @@ class MetadataStage(PublisherStage):
             context.inventory.repo_url
         )
 
-    def _write_metadata_artifact(self, context: PublishContext) -> str:
-        """Persist the stage 2 result as a JSON artifact."""
-        artifacts_dir = Path(context.artifacts_dir or ".publisher_artifacts")
-        artifacts_dir.mkdir(parents=True, exist_ok=True)
-
-        artifact_path = artifacts_dir / "02_metadata.json"
-        artifact = {
-            "name": context.metadata.name,
-            "description": context.metadata.description,
-            "tags": context.metadata.tags,
-            "inputs_schema": context.metadata.inputs_schema,
-            "outputs_schema": context.metadata.outputs_schema,
-            "token_estimate": context.metadata.token_estimate,
-            "word_count": context.metadata.word_count,
-            "maturity_score": context.metadata.maturity_score,
-            "security_score": context.metadata.security_score,
-            "repo_url": context.metadata.extra.get("repo_url"),
-            "repo_signals": context.metadata.extra.get("repo_signals"),
-            "notes": context.metadata.notes,
-        }
-        artifact_path.write_text(
-            json.dumps(artifact, indent=2, ensure_ascii=True) + "\n",
-            encoding="utf-8",
-        )
-        context.metadata.artifact_path = str(artifact_path)
-        return str(artifact_path)
 
     def _count_words(self, context: PublishContext) -> int:
         """Count words from the skill body, falling back to the raw skill file."""

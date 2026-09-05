@@ -29,6 +29,7 @@ from rich.table import Table
 from publisher.artifacts.bundle import build_bundle_bytes
 from publisher.app.pipeline import PublisherPipeline
 from publisher.frontmatter import parse_skill_markdown
+from publisher.manifest import load_manifest
 from publisher.registry.client import (
     ExistingSkill,
     RegistryLookupUnavailable,
@@ -786,6 +787,8 @@ def _report_detail_sections(context) -> list[tuple[str, list[tuple[str, str]]]]:
         )
     )
     structure_rows = [("Status", structure_grade)]
+    if context.report_path:
+        structure_rows.append(("Report", context.report_path))
     if context.validation.checks_run:
         structure_rows.append(
             (
@@ -1196,8 +1199,9 @@ def _preflight_identity_from_skill_path(
         return PreflightIdentity(slug=slug, intent=intent)
 
     frontmatter = _read_skill_frontmatter_for_preflight(skill_path)
-    metadata = frontmatter.get("metadata", {}) if isinstance(frontmatter, dict) else {}
-    if not isinstance(metadata, dict):
+    try:
+        metadata = load_manifest(_resolve_skill_file(Path(skill_path)).parent)
+    except ValueError:
         metadata = {}
 
     return PreflightIdentity(

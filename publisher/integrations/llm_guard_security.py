@@ -7,7 +7,6 @@ import importlib
 import importlib.machinery
 import importlib.util
 import io
-import json
 import logging
 import os
 import sys
@@ -37,7 +36,7 @@ class LlmGuardSecurityResult:
 def run_llm_guard_security_scan(
     *,
     skill_root: Path,
-    artifacts_dir: Path,
+    artifacts_dir: Path | None = None,
     field_values: dict[str, str],
 ) -> LlmGuardSecurityResult:
     """Run LLM Guard input scanners over skill-package text."""
@@ -48,9 +47,6 @@ def run_llm_guard_security_scan(
             reason="PUBLISHER_LLM_GUARD_ENABLED is false",
         )
 
-    llm_guard_dir = artifacts_dir / "llm_guard"
-    llm_guard_dir.mkdir(parents=True, exist_ok=True)
-
     try:
         with _suppress_llm_guard_output():
             scan_prompt, scanners = _load_llm_guard()
@@ -58,18 +54,14 @@ def run_llm_guard_security_scan(
         return LlmGuardSecurityResult(
             status="not_available",
             reason=f"Install llm-guard to enable skill security scanning: {exc}",
-            artifact_dir=str(llm_guard_dir),
         )
     except Exception as exc:  # pragma: no cover - defensive around optional scanner deps
         return LlmGuardSecurityResult(
             status="failed",
             reason=f"LLM Guard scanner initialization failed: {exc}",
-            artifact_dir=str(llm_guard_dir),
         )
 
     findings: list[dict[str, Any]] = []
-    scanner_scores: dict[str, dict[str, float]] = {}
-    scanner_validity: dict[str, dict[str, bool]] = {}
     expected_scanners = set(_scanner_names(scanners))
     scanned_fields = 0
 
@@ -83,7 +75,6 @@ def run_llm_guard_security_scan(
                 _sanitized, results_valid, results_score = scan_prompt(scanners, text)
         except Exception as exc:  # pragma: no cover - scanner/runtime version drift
             return _failed_result(
-                llm_guard_dir=llm_guard_dir,
                 reason=f"LLM Guard failed while scanning {field_name}: {exc}",
             )
 
@@ -91,15 +82,12 @@ def run_llm_guard_security_scan(
         scored_scanners = {str(name) for name in results_score}
         if returned_scanners != expected_scanners or scored_scanners != expected_scanners:
             return _failed_result(
-                llm_guard_dir=llm_guard_dir,
                 reason=f"LLM Guard returned missing scanner results for {field_name}",
             )
 
         for scanner_name, is_valid in results_valid.items():
             normalized_name = str(scanner_name)
             score = _coerce_score(results_score.get(scanner_name))
-            scanner_scores.setdefault(normalized_name, {})[field_name] = score
-            scanner_validity.setdefault(normalized_name, {})[field_name] = bool(is_valid)
             if is_valid:
                 continue
             findings.append(
@@ -115,44 +103,23 @@ def run_llm_guard_security_scan(
 
     if not scanned_fields:
         return _failed_result(
-            llm_guard_dir=llm_guard_dir,
             reason="LLM Guard did not receive any non-empty scan targets",
         )
 
     score = _score_from_findings(findings)
-    artifact = {
-        "skill_root": str(skill_root),
-        "status": "scored",
-        "score": score,
-        "checks_run": _scanner_names(scanners),
-        "findings": findings,
-        "scanner_scores": scanner_scores,
-        "scanner_validity": scanner_validity,
-    }
-    (llm_guard_dir / "llm_guard.report.json").write_text(
-        json.dumps(artifact, indent=2, ensure_ascii=True) + "\n",
-        encoding="utf-8",
-    )
 
     return LlmGuardSecurityResult(
         status="scored",
         score=score,
         findings=findings,
         checks_run=_scanner_names(scanners),
-        artifact_dir=str(llm_guard_dir),
     )
 
 
-def _failed_result(*, llm_guard_dir: Path, reason: str) -> LlmGuardSecurityResult:
-    """Persist and return an unscored evaluator failure."""
-    artifact = {"status": "failed", "score": None, "reason": reason}
-    (llm_guard_dir / "llm_guard.report.json").write_text(
-        json.dumps(artifact, indent=2, ensure_ascii=True) + "\n",
-        encoding="utf-8",
-    )
+def _failed_result(*, reason: str) -> LlmGuardSecurityResult:
+    """Return an unscored evaluator failure."""
     return LlmGuardSecurityResult(
         status="failed",
-        artifact_dir=str(llm_guard_dir),
         reason=reason,
     )
 

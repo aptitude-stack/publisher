@@ -37,7 +37,7 @@ _MARKER_PATTERN = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
 
 
 def normalize_relationships(value: object) -> dict[str, list[dict[str, Any]]]:
-    """Return a registry-shaped relationship payload from frontmatter data."""
+    """Return a registry-shaped relationship payload from manifest data."""
     if value is None:
         relationships: Mapping[str, object] = {}
     elif isinstance(value, Mapping):
@@ -57,17 +57,11 @@ def normalize_relationships(value: object) -> dict[str, list[dict[str, Any]]]:
     return normalized
 
 
-def relationship_frontmatter_value(frontmatter: object) -> object:
-    """Return authored relationships from supported frontmatter locations."""
-    if not isinstance(frontmatter, Mapping):
+def relationship_manifest_value(manifest: object) -> object:
+    """Return authored relationships from the Aptitude metadata manifest."""
+    if not isinstance(manifest, Mapping):
         return None
-    if "relationships" in frontmatter:
-        return frontmatter.get("relationships")
-
-    metadata = frontmatter.get("metadata")
-    if isinstance(metadata, Mapping):
-        return metadata.get("relationships")
-    return None
+    return manifest.get("relationships")
 
 
 def _normalize_family(family: str, value: object) -> list[dict[str, Any]]:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+
 import json
 
 from publisher.interfaces.mcp.formatting import format_response
@@ -29,7 +30,7 @@ def _result() -> PublisherToolResult:
             maturity_score=0.75,
             overall_score=0.9,
             overall_label="excellent",
-            artifacts_dir="/tmp/example-skill/.publisher_artifacts",
+            report_path="/tmp/cache/report.json",
         ),
         evidence_reused=True,
         receipt_created_at="2026-08-23T10:00:00Z",

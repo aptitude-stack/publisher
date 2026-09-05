@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import json
 import subprocess
 from pathlib import Path
 from typing import Any
 
 from publisher.domain.models import PublishContext
 from publisher.frontmatter import parse_skill_markdown
+from publisher.manifest import legacy_aptitude_fields, load_manifest
 from publisher.stages.base import PublisherStage
 
 
@@ -29,21 +29,19 @@ class DiscoveryStage(PublisherStage):
         except ValueError as exc:
             context.source.parsed_content = {}
             blocking_issues.append(str(exc))
-        artifact_path = self._write_inventory_artifact(context)
         context.add_snapshot(
             stage_name=self.name,
             status="completed" if not blocking_issues else "incomplete",
             data={
                 "skill_root": context.inventory.skill_root,
                 "skill_markdown_path": context.inventory.skill_markdown_path,
-                "artifact_path": artifact_path,
                 "companion_markdown_files": context.inventory.companion_markdown_files,
                 "script_files": context.inventory.script_files,
                 "blocking_issues": blocking_issues,
             },
             messages=[
                 "Skill folder discovery completed successfully.",
-                "SKILL.md was parsed and stored for downstream stages.",
+                "SKILL.md and aptitude.yaml were parsed and stored for downstream stages.",
             ]
             if not blocking_issues
             else [
@@ -85,7 +83,7 @@ class DiscoveryStage(PublisherStage):
         inventory.other_files = []
         inventory.notes = [
             "Skill inventory is built from the full folder, not from a single file.",
-            "SKILL.md is treated as the primary entry file for the package.",
+            "SKILL.md is the primary entry file and aptitude.yaml is the Aptitude metadata sidecar.",
         ]
         if inventory.repo_url:
             inventory.notes.append("Repository URL was discovered from the local git repository.")
@@ -120,10 +118,16 @@ class DiscoveryStage(PublisherStage):
         context.source.file_name = skill_file.name
 
         frontmatter, body = parse_skill_markdown(raw_content)
+        legacy = legacy_aptitude_fields(frontmatter)
+        if legacy:
+            raise ValueError("Move Aptitude fields from SKILL.md to aptitude.yaml: " + ", ".join(legacy))
+        manifest = load_manifest(skill_root)
         parsed_skill: dict[str, Any] = {
             "skill_root": str(skill_root),
             "skill_file": str(skill_file),
             "frontmatter": frontmatter,
+            "manifest": manifest,
+            "manifest_file": str(skill_root / "aptitude.yaml"),
             "body": body,
             "inventory": {
                 "companion_markdown_files": context.inventory.companion_markdown_files,
@@ -140,36 +144,6 @@ class DiscoveryStage(PublisherStage):
         context.source.parsed_content = parsed_skill
         return parsed_skill
 
-    def _write_inventory_artifact(self, context: PublishContext) -> str:
-        """Persist the discovered skill package inventory."""
-        artifacts_dir = Path(context.artifacts_dir or ".publisher_artifacts")
-        artifacts_dir.mkdir(parents=True, exist_ok=True)
-
-        artifact_path = artifacts_dir / "00_inventory.json"
-        inventory = context.inventory
-        artifact = {
-            "skill_root": inventory.skill_root,
-            "skill_markdown_path": inventory.skill_markdown_path,
-            "scripts_dir": inventory.scripts_dir,
-            "references_dir": inventory.references_dir,
-            "assets_dir": inventory.assets_dir,
-            "repo_root": inventory.repo_root,
-            "repo_url": inventory.repo_url,
-            "commit_sha": inventory.commit_sha,
-            "tree_path": inventory.tree_path,
-            "companion_markdown_files": inventory.companion_markdown_files,
-            "script_files": inventory.script_files,
-            "reference_files": inventory.reference_files,
-            "asset_files": inventory.asset_files,
-            "other_files": inventory.other_files,
-            "notes": inventory.notes,
-        }
-        artifact_path.write_text(
-            json.dumps(artifact, indent=2, ensure_ascii=True) + "\n",
-            encoding="utf-8",
-        )
-        context.inventory.artifact_path = str(artifact_path)
-        return str(artifact_path)
 
     def _resolve_repo_root(self, skill_root: Path) -> str | None:
         """Resolve the enclosing git repository root if the skill is inside one."""

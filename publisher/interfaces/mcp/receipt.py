@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, is_dataclass
+from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 import hashlib
 import hmac
@@ -10,15 +10,14 @@ import importlib.metadata
 import json
 import os
 from pathlib import Path
-import tempfile
 import tomllib
 from collections.abc import Callable
 from typing import Any
 
 from publisher.domain.models import PublishContext
+from publisher.artifacts.report import safe as _safe, write_report
 
 
-INSPECTION_RECEIPT_FILENAME = "inspection-receipt.json"
 RECEIPT_SCHEMA_VERSION = 1
 RECEIPT_TTL = timedelta(hours=1)
 _CREDENTIAL_ENV_NAMES = (
@@ -26,14 +25,6 @@ _CREDENTIAL_ENV_NAMES = (
     "GROQ_API_KEY",
     "UPSKILL_API_KEY",
     "PUBLISHER_LLM_VALIDATION_API_KEY",
-)
-_SENSITIVE_KEY_MARKERS = (
-    "api_key",
-    "access_token",
-    "publish_token",
-    "read_token",
-    "secret",
-    "password",
 )
 _RECEIPT_STATUSES = frozenset({"ready", "blocked"})
 _RECEIPT_DECISIONS = frozenset({"allow", "review_required", "block"})
@@ -115,10 +106,7 @@ def write_inspection_receipt(
     }
     receipt = _safe(receipt)
     receipt["mac"] = _receipt_mac(receipt, publish_token)
-    artifacts_dir = Path(context.artifacts_dir or ".publisher_artifacts")
-    artifacts_dir.mkdir(parents=True, exist_ok=True)
-    receipt_path = artifacts_dir / INSPECTION_RECEIPT_FILENAME
-    _atomic_write_json(receipt_path, receipt)
+    write_report(context, status="ready" if context.ranking.publish_decision in {"allow", "review_required"} else "blocked", inspection_receipt=receipt)
     return receipt
 
 
@@ -131,8 +119,11 @@ def load_inspection_receipt(
     """Return a structurally valid, unexpired receipt or ``None``."""
 
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError, TypeError):
+        report = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(report, dict) or report.get("schema_version") != 1:
+            return None
+        payload = report.get("inspection_receipt")
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, TypeError):
         return None
     if (
         not isinstance(payload, dict)
@@ -714,39 +705,6 @@ def _valid_mac(value: Any) -> bool:
         and len(value) == 64
         and all(character in "0123456789abcdef" for character in value)
     )
-
-
-def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
-    serialized = json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n"
-    temporary_path: Path | None = None
-    try:
-        descriptor, temporary_name = tempfile.mkstemp(
-            prefix=f".{path.name}.", dir=path.parent, text=True
-        )
-        temporary_path = Path(temporary_name)
-        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-            stream.write(serialized)
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.replace(temporary_path, path)
-    finally:
-        if temporary_path is not None and temporary_path.exists():
-            temporary_path.unlink()
-
-
-def _safe(value: Any) -> Any:
-    if is_dataclass(value):
-        return _safe(asdict(value))
-    if isinstance(value, dict):
-        return {
-            str(key): _safe(item)
-            for key, item in value.items()
-            if isinstance(item, bool)
-            or not any(marker in str(key).lower() for marker in _SENSITIVE_KEY_MARKERS)
-        }
-    if isinstance(value, (list, tuple)):
-        return [_safe(item) for item in value]
-    return value
 
 
 def _utc(value: datetime | None) -> datetime:

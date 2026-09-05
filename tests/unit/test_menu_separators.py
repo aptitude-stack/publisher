@@ -247,15 +247,15 @@ def test_read_menu_skill_extracts_compact_plan_metadata(tmp_path: Path) -> None:
         """---
 name: brainstorming
 license: MIT
-metadata:
-  version: 0.1.0
-  intent: create_skill
 ---
 
 # Brainstorming
 """,
         encoding="utf-8",
     )
+    (skill_file).with_name("aptitude.yaml").write_text("""version: 0.1.0
+intent: create_skill
+""", encoding="utf-8")
 
     skill = menu._read_menu_skill(skill_file)
 
@@ -271,15 +271,15 @@ def test_read_menu_skill_uses_canonical_yaml_semantics(tmp_path: Path) -> None:
         """---
 name: brainstorming
 license: null
-metadata:
-  version: 0.1.0 # release
-  intent: create_skill
 ---
 
 # Brainstorming
 """,
         encoding="utf-8",
     )
+    (skill_file).with_name("aptitude.yaml").write_text("""version: 0.1.0 # release
+intent: create_skill
+""", encoding="utf-8")
 
     skill = menu._read_menu_skill(skill_file)
 
@@ -543,6 +543,7 @@ def test_batch_upload_wizard_expands_directory_into_skill_paths(
     skill_dir = tmp_path / "example-skill"
     skill_dir.mkdir()
     (skill_dir / "SKILL.md").write_text("# Example\n", encoding="utf-8")
+    (skill_dir / "aptitude.yaml").write_text("version: 1.0.0\nintent: create_skill\ntags: [test]\ninputs_schema: {}\noutputs_schema: {}\n", encoding="utf-8")
     captured: dict[str, object] = {}
 
     def fake_run_admin_batch_upload(args):
@@ -681,9 +682,6 @@ def test_publish_plan_blocks_existing_create_slug_before_pipeline(
         """---
 name: python-patterns
 description: "Use when testing publisher preflight behavior."
-metadata:
-  version: 0.1.0
-  intent: create_skill
 ---
 
 # python-patterns
@@ -692,6 +690,9 @@ Use this skill for publisher unit tests.
 """,
         encoding="utf-8",
     )
+    (skill_dir / "SKILL.md").with_name("aptitude.yaml").write_text("""version: 0.1.0
+intent: create_skill
+""", encoding="utf-8")
     monkeypatch.setenv("APTITUDE_PUBLISH_TOKEN", "publish-token")
     monkeypatch.setattr(
         "publisher.app.cli.get_existing_skill",
@@ -720,3 +721,13 @@ Use this skill for publisher unit tests.
     )
 
     assert menu._execute_plan(plan) == 1
+
+
+def test_menu_does_not_offer_skills_with_missing_or_invalid_sidecars(tmp_path):
+    skill_file = tmp_path / "SKILL.md"
+    skill_file.write_text("---\nname: sample\ndescription: Use when testing.\n---\nInstructions")
+    assert menu._read_menu_skill(skill_file) is None
+    (tmp_path / "aptitude.yaml").write_bytes(b"\xff")
+    assert menu._read_menu_skill(skill_file) is None
+    (tmp_path / "aptitude.yaml").write_text("{}\n")
+    assert menu._read_menu_skill(skill_file) is None
