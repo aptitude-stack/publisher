@@ -20,9 +20,9 @@ def test_report_merges_publish_readiness_into_structure_validation() -> None:
     context.validation.checks_run = [
         "skill_root_exists",
         "skill_md_present",
-        "yaml_frontmatter_present",
+        "aptitude_manifest_present",
         "body_instructions_heading",
-        "relationships_frontmatter_shape",
+        "relationships_manifest_shape",
         "llm_skill_contract_validation",
     ]
     context.add_gate_result(gate_name="discovery_gate", passed=True)
@@ -42,7 +42,7 @@ def test_report_merges_publish_readiness_into_structure_validation() -> None:
         ("Status", "failed"),
         (
             "Validation coverage",
-            "6 checks: skill folder, SKILL.md, frontmatter, instructions, relationships, LLM contract",
+            "6 checks: skill folder, SKILL.md, aptitude.yaml, instructions, relationships, LLM contract",
         ),
         ("Issue 1", "Identity did not extract a version."),
     ]

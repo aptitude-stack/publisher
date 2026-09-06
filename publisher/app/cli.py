@@ -794,7 +794,7 @@ def _report_detail_sections(context) -> list[tuple[str, list[tuple[str, str]]]]:
             (
                 "Validation coverage",
                 f"{len(context.validation.checks_run)} checks: skill folder, SKILL.md, "
-                "frontmatter, instructions, relationships, LLM contract",
+                "aptitude.yaml, instructions, relationships, LLM contract",
             )
         )
     structure_rows.extend(

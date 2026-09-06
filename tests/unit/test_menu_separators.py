@@ -356,6 +356,7 @@ def test_build_publish_plan_prints_separators_between_decisions(
     assert plan.skill_name == "example"
     assert plan.skill_version == "0.1.0"
     assert plan.license == "MIT"
+    assert plan.scan_profile == "fast"
     assert events == [
         "separator",
         "select:Skill source",
@@ -363,8 +364,6 @@ def test_build_publish_plan_prints_separators_between_decisions(
         "select:Local skill",
         "separator",
         "select:Publish intent",
-        "separator",
-        "select:Inspection depth",
     ]
 
 
@@ -388,13 +387,12 @@ def test_build_inspect_plan_skips_publish_intent(monkeypatch, tmp_path: Path) ->
     plan = menu._build_publish_plan("inspect")
 
     assert plan.intent == "create_skill"
+    assert plan.scan_profile == "fast"
     assert events == [
         "separator",
         "select:Skill source",
         "separator",
         "select:Local skill",
-        "separator",
-        "select:Inspection depth",
     ]
 
 
