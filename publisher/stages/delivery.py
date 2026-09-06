@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from publisher.domain.models import PublishContext
+from publisher.assessment import build_assessment
 from publisher.relationships import normalize_relationships, relationship_manifest_value
 from publisher.stages.base import PublisherStage
 
@@ -54,6 +55,7 @@ class DeliveryStage(PublisherStage):
             "maturity_score": context.metadata.maturity_score,
             "security_score": context.security.score,
             "overall_score": context.ranking.total_score,
+            "assessment": build_assessment(context),
         }
         provenance = None
         if context.inventory.repo_url and context.inventory.commit_sha:
