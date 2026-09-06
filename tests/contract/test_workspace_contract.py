@@ -43,9 +43,12 @@ from app.interface.dto.skills_fetch import SkillVersionMetadataResponse
 from app.interface.validation import validate_skill_bundle
 p=Path(sys.argv[1])
 request=SkillVersionCreateRequest.model_validate_json((p/'request.json').read_text())
-metadata=request.metadata.model_dump()
+metadata=request.metadata.model_dump(mode='json')
 assert not {'inputs_schema','outputs_schema'} & metadata.keys()
 assert metadata['tags']==[]
+assert metadata['assessment']['schema_version']==1
+assert metadata['assessment']['maturity']['upskill_score'] is None
+assert metadata['assessment']['security']['scanned'] is False
 bundle=(p/'skill.tar.zst').read_bytes()
 validate_skill_bundle(bundle,filename='skill.tar.zst',media_type='application/zstd')
 from hashlib import sha256
@@ -55,6 +58,7 @@ response=SkillVersionMetadataResponse(slug='demo',version=request.version,instal
     metadata=metadata,lifecycle_status='published',trust_tier='untrusted',namespace='public',
     artifact_origin='internal',review_state='approved',promotion_channel='prod',published_at='2026-09-06T00:00:00Z')
 (p/'response.json').write_text(response.model_dump_json())
+assert json.loads((p/'response.json').read_text())['metadata']['assessment']==json.loads((p/'request.json').read_text())['metadata']['assessment']
 '''
     resolver_check = '''
 import sys

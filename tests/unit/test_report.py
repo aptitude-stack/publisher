@@ -114,7 +114,11 @@ def test_inspect_and_publish_preserve_read_only_source_and_reuse_report(tmp_path
     monkeypatch.setenv("APTITUDE_PUBLISH_TOKEN", "test-publish-token")
     monkeypatch.setattr("publisher.interfaces.mcp.server.get_existing_skill", lambda **_: None)
     monkeypatch.setattr("publisher.interfaces.mcp.server.check_relationship_references", lambda **_: [])
-    monkeypatch.setattr("publisher.interfaces.mcp.server.publish_to_registry", lambda **_: RegistryPublishResult(status_code=201, body={}, request_id=None))
+    uploaded_assessments = []
+    def upload(**kwargs):
+        uploaded_assessments.append(kwargs["context"].delivery_payload.metadata["assessment"])
+        return RegistryPublishResult(status_code=201, body={}, request_id=None)
+    monkeypatch.setattr("publisher.interfaces.mcp.server.publish_to_registry", upload)
     for path in root.iterdir():
         path.chmod(0o444)
     root.chmod(0o555)
@@ -122,12 +126,14 @@ def test_inspect_and_publish_preserve_read_only_source_and_reuse_report(tmp_path
         adapter = PublisherMcpAdapter()
         inspected = json.loads(adapter.inspect_skill(InspectSkillInput(skill_path=root, response_format="json")))
         assert inspected["ok"], inspected
+        assessment = json.loads(report_path(root).read_text())["inspection_receipt"]["final_payload"]["metadata"]["assessment"]
         published = json.loads(adapter.publish_skill(PublishSkillInput(
             skill_path=root, slug="secure-good", version="0.0.1", intent="create_skill",
             confirm_upload=True, response_format="json",
         )))
         assert published["status"] == "published", published
         assert published["evidence_reused"] is True
+        assert uploaded_assessments == [assessment]
         assert len(calls) == 1
         assert {p.name: p.read_bytes() for p in root.iterdir()} == original
         path = report_path(root)
