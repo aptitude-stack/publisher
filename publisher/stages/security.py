@@ -116,7 +116,15 @@ class SecurityStage(PublisherStage):
             "metadata": self._build_metadata_payload(context),
             "package": self._build_package_payload(context),
         }
-        return {target: self._extract_field_text(payload, target) for target in context.security.scan_targets}
+        field_values: dict[str, str] = {}
+        for target in context.security.scan_targets:
+            if target.startswith("package."):
+                files = payload["package"][target.removeprefix("package.")]
+                for relative_path, content in files.items():
+                    field_values[f"{target}.{relative_path}"] = content
+            else:
+                field_values[target] = self._extract_field_text(payload, target)
+        return field_values
 
     def _build_content_payload(self, context: PublishContext) -> dict[str, Any]:
         """Build the content view available before the delivery stage runs."""
