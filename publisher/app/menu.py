@@ -343,20 +343,6 @@ def _build_publish_plan(action: Action) -> PublishPlan:
         )
     else:
         intent = default_intent
-    _print_step_separator()
-    scan_profile = _select(
-        "Inspection depth",
-        [
-            ("Fast scan", "fast"),
-            ("Full scan", "slow"),
-        ],
-        default="fast",
-        descriptions={
-            "fast": "Use quicker checks for local iteration.",
-            "slow": "Use broader checks for deeper review.",
-        },
-        allow_back=True,
-    )
 
     return PublishPlan(
         action=action,
@@ -368,7 +354,7 @@ def _build_publish_plan(action: Action) -> PublishPlan:
         artifact_origin="internal",
         policy_pack_slug=None,
         publisher_identity=None,
-        scan_profile=scan_profile,
+        scan_profile="fast",
         skill_name=skill.name if skill is not None else None,
         skill_version=skill.version if skill is not None else None,
         license=skill.license if skill is not None else None,
